@@ -380,3 +380,6 @@ scary -86% becomes the real number, and the subtitle proves what it's comparing.
   meaningful comparison is YoY anyway.
 - All measures reuse your existing foundations `_Anchor Date`, `_Base User Count`,
   `_Base Session Count` — nothing in your 15+15 suite changes.
+
+  Failed to resolve name 'ISOWEEKNUM'. It is not a valid table, variable, or function name.
+  
