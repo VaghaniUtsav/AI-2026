@@ -319,21 +319,69 @@ Sessions YoY % (LfL) = DIVIDE( [Sessions (Current)] - [Sessions (PY LfL)],   [Se
 
 ## STEP 4 — Honest subtitle labels (so the card SHOWS the windows it compares)
 
-This is what kills the "is this comparing 4 days to a month?" confusion — the card literally states
-the ranges.
+These rename themselves per toggle: **QTD** shows a quarter label, **WTD** an ISO calendar-week
+label (CW + date span, updating daily), and YDAY / MTD / YTD keep a plain date range. Each measure
+computes quarter + ISO-week pieces, then a `SWITCH` picks the format. (The ISO VARs are only
+evaluated when the WTD branch runs, so there is no waste on the other toggles.)
 
 ```dax
 Label Current Range =
-"Current: " & FORMAT( [_Period Start], "dd mmm yyyy" ) &
-    IF( [_Period Start] = [_Period End], "", " – " & FORMAT( [_Period End], "dd mmm yyyy" ) )
+VAR P  = SELECTEDVALUE('Period'[Period], "MTD")
+VAR S  = [_Period Start]
+VAR E  = [_Period End]
+VAR Q  = ROUNDUP( MONTH(S) / 3, 0 )                       -- quarter number of the start
+-- ISO week number + ISO year of the week starting on S (Monday):
+VAR Thu     = S + 3                                        -- Thursday fixes the ISO year
+VAR ISOYear = YEAR( Thu )
+VAR Jan4    = DATE( ISOYear, 1, 4 )                        -- 4 Jan is always in ISO week 1
+VAR W1Mon   = Jan4 - ( WEEKDAY( Jan4, 2 ) - 1 )
+VAR ISOWeek = INT( ( S - W1Mon ) / 7 ) + 1
+RETURN
+    SWITCH( P,
+        "QTD", "Q" & Q & " " & YEAR(S) & " (Current)",
+        "WTD", "CW" & FORMAT( ISOWeek, "00" ) & " " & ISOYear
+                    & " (" & FORMAT( S, "dd mmm" ) & " - " & FORMAT( E, "dd mmm" ) & ")",
+        "Current: " & FORMAT( S, "dd mmm yyyy" )
+                    & IF( S = E, "", " - " & FORMAT( E, "dd mmm yyyy" ) )
+    )
 
 Label Prev Range =
-"vs " & FORMAT( [_Prev Start], "dd mmm" ) &
-    IF( [_Prev Start] = [_Prev End], "", " – " & FORMAT( [_Prev End], "dd mmm yyyy" ) )
+VAR P  = SELECTEDVALUE('Period'[Period], "MTD")
+VAR S  = [_Prev Start]
+VAR E  = [_Prev End]
+VAR Q  = ROUNDUP( MONTH(S) / 3, 0 )
+VAR Thu     = S + 3
+VAR ISOYear = YEAR( Thu )
+VAR Jan4    = DATE( ISOYear, 1, 4 )
+VAR W1Mon   = Jan4 - ( WEEKDAY( Jan4, 2 ) - 1 )
+VAR ISOWeek = INT( ( S - W1Mon ) / 7 ) + 1
+RETURN
+    SWITCH( P,
+        "QTD", "Q" & Q & " " & YEAR(S),
+        "WTD", "CW" & FORMAT( ISOWeek, "00" ) & " " & ISOYear
+                    & " (" & FORMAT( S, "dd mmm" ) & " - " & FORMAT( E, "dd mmm" ) & ")",
+        "vs " & FORMAT( S, "dd mmm" )
+              & IF( S = E, "", " - " & FORMAT( E, "dd mmm yyyy" ) )
+    )
 
 Label PY Range =
-"vs " & FORMAT( [_PY Start], "dd mmm" ) &
-    IF( [_PY Start] = [_PY End], "", " – " & FORMAT( [_PY End], "dd mmm yyyy" ) )
+VAR P  = SELECTEDVALUE('Period'[Period], "MTD")
+VAR S  = [_PY Start]
+VAR E  = [_PY End]
+VAR Q  = ROUNDUP( MONTH(S) / 3, 0 )
+VAR Thu     = S + 3
+VAR ISOYear = YEAR( Thu )
+VAR Jan4    = DATE( ISOYear, 1, 4 )
+VAR W1Mon   = Jan4 - ( WEEKDAY( Jan4, 2 ) - 1 )
+VAR ISOWeek = INT( ( S - W1Mon ) / 7 ) + 1
+RETURN
+    SWITCH( P,
+        "QTD", "Q" & Q & " " & YEAR(S),
+        "WTD", "CW" & FORMAT( ISOWeek, "00" ) & " " & ISOYear
+                    & " (" & FORMAT( S, "dd mmm" ) & " - " & FORMAT( E, "dd mmm" ) & ")",
+        "vs " & FORMAT( S, "dd mmm" )
+              & IF( S = E, "", " - " & FORMAT( E, "dd mmm yyyy" ) )
+    )
 ```
 
 ---
