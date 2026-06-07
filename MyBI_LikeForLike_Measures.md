@@ -207,59 +207,80 @@ RETURN
 
 ## STEP 2 — Value measures (6) — Users & Sessions
 
-Each just applies the boundary dates over the right base measure. `REMOVEFILTERS('Date Table')`
-lets the window override the date/year slicers; the boundary measures are evaluated **before**
-removal, so the anchor is still correct.
+Each applies the boundary dates over the right base measure. **Important:** the boundary measures
+must be captured into `VAR`s first, then the VARs used in the filter. You **cannot** put a measure
+reference directly inside a `CALCULATE` boolean filter (`'Date Table'[Date] >= [_Period Start]`) —
+PBIRS throws *"A function 'PLACEHOLDER' has been used in a True/False expression..."*. Capturing to
+a VAR also evaluates the date in the current (slicer) context **before** `REMOVEFILTERS` clears it,
+so the anchor stays correct.
 
 ```dax
 -- ===== USERS =====
 Users (Current) =
+VAR S = [_Period Start]
+VAR E = [_Period End]
+RETURN
 CALCULATE(
     [_Base User Count],
     REMOVEFILTERS('Date Table'),
-    'Date Table'[Date] >= [_Period Start],
-    'Date Table'[Date] <= [_Period End]
+    'Date Table'[Date] >= S,
+    'Date Table'[Date] <= E
 )
 
 Users (Prev LfL) =
+VAR S = [_Prev Start]
+VAR E = [_Prev End]
+RETURN
 CALCULATE(
     [_Base User Count],
     REMOVEFILTERS('Date Table'),
-    'Date Table'[Date] >= [_Prev Start],
-    'Date Table'[Date] <= [_Prev End]
+    'Date Table'[Date] >= S,
+    'Date Table'[Date] <= E
 )
 
 Users (PY LfL) =
+VAR S = [_PY Start]
+VAR E = [_PY End]
+RETURN
 CALCULATE(
     [_Base User Count],
     REMOVEFILTERS('Date Table'),
-    'Date Table'[Date] >= [_PY Start],
-    'Date Table'[Date] <= [_PY End]
+    'Date Table'[Date] >= S,
+    'Date Table'[Date] <= E
 )
 
 -- ===== SESSIONS =====
 Sessions (Current) =
+VAR S = [_Period Start]
+VAR E = [_Period End]
+RETURN
 CALCULATE(
     [_Base Session Count],
     REMOVEFILTERS('Date Table'),
-    'Date Table'[Date] >= [_Period Start],
-    'Date Table'[Date] <= [_Period End]
+    'Date Table'[Date] >= S,
+    'Date Table'[Date] <= E
 )
 
 Sessions (Prev LfL) =
+VAR S = [_Prev Start]
+VAR E = [_Prev End]
+RETURN
 CALCULATE(
     [_Base Session Count],
     REMOVEFILTERS('Date Table'),
-    'Date Table'[Date] >= [_Prev Start],
-    'Date Table'[Date] <= [_Prev End]
+    'Date Table'[Date] >= S,
+    'Date Table'[Date] <= E
 )
 
 Sessions (PY LfL) =
+VAR S = [_PY Start]
+VAR E = [_PY End]
+RETURN
 CALCULATE(
     [_Base Session Count],
     REMOVEFILTERS('Date Table'),
-    'Date Table'[Date] >= [_PY Start],
-    'Date Table'[Date] <= [_PY End]
+    'Date Table'[Date] >= S,
+    'Date Table'[Date] <= E
 )
 ```
 
@@ -389,5 +410,3 @@ scary -86% becomes the real number, and the subtitle proves what it's comparing.
   meaningful comparison is YoY anyway.
 - All measures reuse your existing foundations `_Anchor Date`, `_Base User Count`,
   `_Base Session Count` — nothing in your 15+15 suite changes.
-
-  A function 'PLACEHOLDER' has been used in a True/False expression that is used as a table filter expression. This is not allowed.
