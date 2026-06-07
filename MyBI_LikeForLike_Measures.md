@@ -144,21 +144,29 @@ RETURN
 
 -- (6) HELPER (WTD only): Monday of the SAME ISO week, one ISO year earlier.
 --     ISO rules: weeks start Monday; week 1 is the week containing 4 Jan; the
---     week's ISO year is the year of its Thursday. We map (ISO year, ISO week)
---     back one year and rebuild the Monday, clamping week 53 -> 52 when the prior
---     ISO year is shorter. Uses ISOWEEKNUM (a plain date function, PBIRS-safe).
+--     week's ISO year is the year of its Thursday. ISO week NUMBER is computed
+--     MANUALLY (this PBIRS build has no ISOWEEKNUM) as the count of whole weeks
+--     between the week's Monday and the Monday of ISO week 1. We map that week
+--     number back one ISO year and rebuild the Monday, clamping 53 -> 52 when the
+--     prior ISO year is shorter. Uses only WEEKDAY / DATE — both PBIRS-safe.
 _PY Week Start (ISO) =
-VAR S        = [_Period Start]                            -- Monday of the anchor's ISO week
-VAR Thu      = S + 3                                      -- Thursday fixes the ISO year
-VAR ISOYear  = YEAR( Thu )
-VAR ISOWeek  = ISOWEEKNUM( S )
-VAR PrevYear = ISOYear - 1
-VAR MaxWeek  = ISOWEEKNUM( DATE( PrevYear, 12, 28 ) )     -- 28 Dec is always in the last ISO week
-VAR TgtWeek  = MIN( ISOWeek, MaxWeek )                    -- clamp 53 -> 52 if prior year has no W53
-VAR Jan4Prev = DATE( PrevYear, 1, 4 )                     -- 4 Jan is always in ISO week 1
-VAR Week1Mon = Jan4Prev - ( WEEKDAY( Jan4Prev, 2 ) - 1 )  -- Monday of prior year's ISO week 1
+VAR S         = [_Period Start]                           -- Monday of the anchor's ISO week
+VAR Thu       = S + 3                                     -- Thursday fixes the ISO year
+VAR ISOYear   = YEAR( Thu )
+-- ISO week 1 Monday of THIS ISO year (week containing 4 Jan):
+VAR Jan4      = DATE( ISOYear, 1, 4 )
+VAR Week1Mon  = Jan4 - ( WEEKDAY( Jan4, 2 ) - 1 )
+VAR ISOWeek   = INT( ( S - Week1Mon ) / 7 ) + 1           -- manual ISO week number
+-- Prior ISO year: its week-1 Monday and its total week count (28 Dec is always last week):
+VAR PrevYear  = ISOYear - 1
+VAR PJan4     = DATE( PrevYear, 1, 4 )
+VAR PWeek1Mon = PJan4 - ( WEEKDAY( PJan4, 2 ) - 1 )
+VAR PDec28    = DATE( PrevYear, 12, 28 )
+VAR PDec28Mon = PDec28 - ( WEEKDAY( PDec28, 2 ) - 1 )
+VAR MaxWeek   = INT( ( PDec28Mon - PWeek1Mon ) / 7 ) + 1  -- 52 or 53
+VAR TgtWeek   = MIN( ISOWeek, MaxWeek )                   -- clamp 53 -> 52 if no W53 last year
 RETURN
-    Week1Mon + ( TgtWeek - 1 ) * 7
+    PWeek1Mon + ( TgtWeek - 1 ) * 7                       -- Monday of the same ISO week last year
 
 -- (7) First day of the same period one year earlier.
 _PY Start =
@@ -374,12 +382,10 @@ scary -86% becomes the real number, and the subtitle proves what it's comparing.
   `_Period End` to `[_Anchor Date] - 1` and `_Period Start`'s `"YDAY"` branch to `A - 1`.
 - **WTD is ISO-week based.** Weeks start **Monday**; "same week last year" maps to the **same ISO
   week number** in the prior ISO year (not just 364 days back), so it stays correct across 52/53-week
-  year boundaries. Week 53 clamps to 52 when the prior year has no week 53. Needs your model's
-  locale `WEEKDAY`/`ISOWEEKNUM` to behave normally (they do on PBIRS).
+  year boundaries. Week 53 clamps to 52 when the prior year has no week 53. The ISO week number is
+  computed **manually** with `WEEKDAY` + `DATE` — this PBIRS build does **not** have `ISOWEEKNUM`,
+  so never reintroduce that function here.
 - **YTD "Previous"** naturally equals **YTD PY** (prior year to-date) — expected; for YTD the
   meaningful comparison is YoY anyway.
 - All measures reuse your existing foundations `_Anchor Date`, `_Base User Count`,
   `_Base Session Count` — nothing in your 15+15 suite changes.
-
-  Failed to resolve name 'ISOWEEKNUM'. It is not a valid table, variable, or function name.
-  
