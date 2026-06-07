@@ -427,18 +427,28 @@ SWITCH( SELECTEDVALUE('Period'[Period], "MTD"),
 Users Change %    = DIVIDE( [Users (Current)]    - [Users (Prev LfL)],    [Users (Prev LfL)] )
 Sessions Change % = DIVIDE( [Sessions (Current)] - [Sessions (Prev LfL)], [Sessions (Prev LfL)] )
 
--- (c) Display text: e.g. "MoM ▲ 4.2%" / "QoQ ▼ 3.1%" — label + arrow + value in one card
+-- (b2) Period-over-period DIFFERENCE (the actual number = current minus previous, signed)
+Users Change Diff    = [Users (Current)]    - [Users (Prev LfL)]
+Sessions Change Diff = [Sessions (Current)] - [Sessions (Prev LfL)]
+
+-- (c) Display text: e.g. "MoM  +1,250  ▲ 4.2%" / "DoD  -10  ▼ 33.3%"
+--     = dynamic label + signed difference + arrow + percent, all in one card.
+--     FORMAT mask "+#,0;-#,0;0" shows +N for gains, -N for drops, 0 for flat.
 Users Change Display =
 VAR v = [Users Change %]
+VAR d = [Users Change Diff]
 RETURN
     [Change Label] & "  " &
+    FORMAT( d, "+#,0;-#,0;0" ) & "  " &
     SWITCH( TRUE(), v > 0, "▲ ", v < 0, "▼ ", "▬ " ) &
     FORMAT( v, "0.0%" )
 
 Sessions Change Display =
 VAR v = [Sessions Change %]
+VAR d = [Sessions Change Diff]
 RETURN
     [Change Label] & "  " &
+    FORMAT( d, "+#,0;-#,0;0" ) & "  " &
     SWITCH( TRUE(), v > 0, "▲ ", v < 0, "▼ ", "▬ " ) &
     FORMAT( v, "0.0%" )
 
@@ -451,17 +461,22 @@ Sessions Change Color =
 VAR v = [Sessions Change %]
 RETURN SWITCH( TRUE(), v > 0, "#1E7D32", v < 0, "#C62828", "#9E9E9E" )
 
--- (e) Same-period-LAST-YEAR comparison ("vs LY") + its color
+-- (e) Same-period-LAST-YEAR comparison ("vs LY"): %, difference, display, color
 Users vs LY %    = DIVIDE( [Users (Current)]    - [Users (PY LfL)],    [Users (PY LfL)] )
 Sessions vs LY % = DIVIDE( [Sessions (Current)] - [Sessions (PY LfL)], [Sessions (PY LfL)] )
 
+Users vs LY Diff    = [Users (Current)]    - [Users (PY LfL)]
+Sessions vs LY Diff = [Sessions (Current)] - [Sessions (PY LfL)]
+
 Users vs LY Display =
 VAR v = [Users vs LY %]
-RETURN "vs LY  " & SWITCH( TRUE(), v > 0, "▲ ", v < 0, "▼ ", "▬ " ) & FORMAT( v, "0.0%" )
+VAR d = [Users vs LY Diff]
+RETURN "vs LY  " & FORMAT( d, "+#,0;-#,0;0" ) & "  " & SWITCH( TRUE(), v > 0, "▲ ", v < 0, "▼ ", "▬ " ) & FORMAT( v, "0.0%" )
 
 Sessions vs LY Display =
 VAR v = [Sessions vs LY %]
-RETURN "vs LY  " & SWITCH( TRUE(), v > 0, "▲ ", v < 0, "▼ ", "▬ " ) & FORMAT( v, "0.0%" )
+VAR d = [Sessions vs LY Diff]
+RETURN "vs LY  " & FORMAT( d, "+#,0;-#,0;0" ) & "  " & SWITCH( TRUE(), v > 0, "▲ ", v < 0, "▼ ", "▬ " ) & FORMAT( v, "0.0%" )
 
 Users vs LY Color =
 VAR v = [Users vs LY %]
@@ -485,6 +500,48 @@ RETURN SWITCH( TRUE(), v > 0, "#1E7D32", v < 0, "#C62828", "#9E9E9E" )
 > year-over-year change, so `Users Change %` (labelled "YoY") and `Users vs LY %` return the **same**
 > number. That is expected — for the other toggles they differ (e.g. MTD: "MoM" = vs last month,
 > "vs LY" = vs the same month last year).
+
+---
+
+## STEP 8 — Put the change + color on a card (click-by-click)
+
+Goal: a small card showing "MoM ▲ 4.2%" in green/red that renames itself with the toggle.
+
+**A. Make sure the toggle slicer is on the page.** Your YDAY/WTD/MTD/QTD/YTD pills must be a slicer
+on `'Period'[Period]`. Without it on the page, `Change Label` can't switch.
+
+**B. Add the card**
+1. Click an **empty spot** on the canvas (nothing selected).
+2. In the **Visualizations** pane, click the **Card** icon. (If you see **Card (new)**, prefer it —
+   its color settings are easier.)
+3. From the **Data/Fields** pane, drag **`Users Change Display`** into the card's **Fields** well.
+4. The card now shows text like **MoM  ▲ 4.2%**.
+
+**C. Clean it up** (paint-roller = Format your visual)
+1. Click the **paint-roller** icon.
+2. **Visual** tab → **Callout value** → set Font size (e.g. 14), Bold if you like.
+3. **Visual** tab → **Category label** → **Off** (hides the measure name underneath).
+4. **General** tab → **Title** → Off (the text already says "MoM"), and size/position it under the
+   big number.
+
+**D. Apply the dynamic color**
+1. Still in **Format → Visual → Callout value**, find **Color**.
+2. Click the small **fx** button next to Color (fx = conditional formatting).
+3. In the dialog: **Format style** = **Field value**.
+4. **What field should we base this on?** → pick **`Users Change Color`**.
+5. **OK.** The text now turns green (up), red (down), or grey (flat) on its own.
+
+**E. Repeat** for Sessions (`Sessions Change Display` + `Sessions Change Color`) and, if you want a
+separate vs-last-year tile, `Users vs LY Display` + `Users vs LY Color`.
+
+**F. Test** — click YDAY / WTD / MTD / QTD / YTD. The card text should flip between
+DoD / WoW / MoM / QoQ / YoY and recolor automatically.
+
+> **If the Card has no `fx` on Color** (older classic Card on some builds): use a **Matrix** instead.
+> Add a Matrix → drag `Users Change Display` into **Values** → in the **Values** field's dropdown
+> choose **Conditional formatting → Font color → Format style = Field value → based on
+> `Users Change Color`**. Then Format → turn **Row/Column headers** and **Totals** Off so it looks
+> like a plain colored label.
 
 ---
 
