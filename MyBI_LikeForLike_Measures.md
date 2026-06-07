@@ -403,6 +403,91 @@ scary -86% becomes the real number, and the subtitle proves what it's comparing.
 
 ---
 
+## STEP 7 — Dynamic DoD / WoW / MoM / QoQ / YoY change (+ label + color)
+
+The "Current vs Previous" comparison already adapts to the toggle (`_Prev Start/_Prev End` shift by
+the right unit), so **one** change measure becomes DoD when YDAY, WoW when WTD, MoM when MTD, QoQ
+when QTD, YoY when YTD. These supersede the fixed-name `... MoM % (LfL)` measures from Step 3 — use
+these instead (you can delete the MoM-named ones to avoid confusion). The `vs LY` pair below is the
+separate "same period one year ago" comparison (your card's "vs PY" section).
+
+```dax
+-- (a) Dynamic acronym that names the current comparison
+Change Label =
+SWITCH( SELECTEDVALUE('Period'[Period], "MTD"),
+    "YDAY", "DoD",
+    "WTD",  "WoW",
+    "MTD",  "MoM",
+    "QTD",  "QoQ",
+    "YTD",  "YoY",
+    "MoM"
+)
+
+-- (b) Period-over-period change % (becomes DoD/WoW/MoM/QoQ/YoY automatically)
+Users Change %    = DIVIDE( [Users (Current)]    - [Users (Prev LfL)],    [Users (Prev LfL)] )
+Sessions Change % = DIVIDE( [Sessions (Current)] - [Sessions (Prev LfL)], [Sessions (Prev LfL)] )
+
+-- (c) Display text: e.g. "MoM ▲ 4.2%" / "QoQ ▼ 3.1%" — label + arrow + value in one card
+Users Change Display =
+VAR v = [Users Change %]
+RETURN
+    [Change Label] & "  " &
+    SWITCH( TRUE(), v > 0, "▲ ", v < 0, "▼ ", "▬ " ) &
+    FORMAT( v, "0.0%" )
+
+Sessions Change Display =
+VAR v = [Sessions Change %]
+RETURN
+    [Change Label] & "  " &
+    SWITCH( TRUE(), v > 0, "▲ ", v < 0, "▼ ", "▬ " ) &
+    FORMAT( v, "0.0%" )
+
+-- (d) Auto color (green up / red down / grey flat) for the change cards
+Users Change Color =
+VAR v = [Users Change %]
+RETURN SWITCH( TRUE(), v > 0, "#1E7D32", v < 0, "#C62828", "#9E9E9E" )
+
+Sessions Change Color =
+VAR v = [Sessions Change %]
+RETURN SWITCH( TRUE(), v > 0, "#1E7D32", v < 0, "#C62828", "#9E9E9E" )
+
+-- (e) Same-period-LAST-YEAR comparison ("vs LY") + its color
+Users vs LY %    = DIVIDE( [Users (Current)]    - [Users (PY LfL)],    [Users (PY LfL)] )
+Sessions vs LY % = DIVIDE( [Sessions (Current)] - [Sessions (PY LfL)], [Sessions (PY LfL)] )
+
+Users vs LY Display =
+VAR v = [Users vs LY %]
+RETURN "vs LY  " & SWITCH( TRUE(), v > 0, "▲ ", v < 0, "▼ ", "▬ " ) & FORMAT( v, "0.0%" )
+
+Sessions vs LY Display =
+VAR v = [Sessions vs LY %]
+RETURN "vs LY  " & SWITCH( TRUE(), v > 0, "▲ ", v < 0, "▼ ", "▬ " ) & FORMAT( v, "0.0%" )
+
+Users vs LY Color =
+VAR v = [Users vs LY %]
+RETURN SWITCH( TRUE(), v > 0, "#1E7D32", v < 0, "#C62828", "#9E9E9E" )
+
+Sessions vs LY Color =
+VAR v = [Sessions vs LY %]
+RETURN SWITCH( TRUE(), v > 0, "#1E7D32", v < 0, "#C62828", "#9E9E9E" )
+```
+
+**Wire it on the card:**
+- Put `Users Change Display` (or `Sessions Change Display`) as the card field — it already shows
+  "MoM ▲ 4.2%" and renames itself to DoD/WoW/QoQ/YoY when you change the toggle.
+- Color it: paint-roller → **Visual → Callout value → Color → fx → Field value → `Users Change
+  Color`**.
+- For a separate "vs LY" tile, use `Users vs LY Display` + `Users vs LY Color` the same way.
+- Prefer label and value in **separate** card elements? Use `Change Label` as a text/card and
+  `Users Change %` (formatted as %) as the value, both colored by `Users Change Color`.
+
+> Note on **YoY vs vs-LY**: when **YTD** is selected, the period-over-period change *is* the
+> year-over-year change, so `Users Change %` (labelled "YoY") and `Users vs LY %` return the **same**
+> number. That is expected — for the other toggles they differ (e.g. MTD: "MoM" = vs last month,
+> "vs LY" = vs the same month last year).
+
+---
+
 ## Assumptions & notes (read these)
 - **The selected date only picks the bucket; a live period runs to today.** Decided by
   `_Latest Data Date` (newest date in the model, ignoring slicers):
