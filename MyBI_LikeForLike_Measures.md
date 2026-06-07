@@ -11,8 +11,10 @@
 There are two "today" dates. The **anchor** = `MAX('Date Table'[Date])` follows whatever you pick
 in the date slicer. The **latest data date** = the newest date in the whole model, ignoring every
 slicer — the platform's real "today". The engine compares the anchor's period to the latest-data
-period: if they are the **same bucket**, the period is still **live**, so it ends **at the anchor**
-(to-date). If the anchor is in an **earlier, finished bucket**, the period ends at the bucket's
+period: the selected date only picks **which bucket** (week/month/quarter/year). If that bucket is
+the **same one** that holds the latest data, the period is **live** and runs to **today** (the
+latest data date) — so clicking any day in Q2 gives April + May + June-to-date, not "up to the day
+you clicked". If the selected bucket is **earlier and finished**, the period ends at the bucket's
 **natural last day** (full period). Then the comparison switches on whether the current window is
 **full** (its end = the bucket's last day) or **partial**: a **full** period compares to the
 **whole** previous / prior-year bucket (full Feb → full Jan, even though 28 ≠ 31 days; full Q1 →
@@ -94,9 +96,12 @@ RETURN
     )
 
 -- (4) End of the CURRENT period.
---     If the anchor's bucket is the one that holds the latest data, the period is
---     LIVE -> end at the anchor (capped at the latest data day). Otherwise the
---     bucket is FINISHED -> end at its natural last day (_Bucket End).
+--     The selected date only picks the BUCKET (which week/month/quarter/year).
+--     If that bucket is the one holding the latest data, the period is LIVE and
+--     runs to TODAY (the latest data date) -> e.g. select any day in Q2 and you
+--     get April + May + June-to-date, not "up to the day you clicked".
+--     If the bucket is FINISHED, the period ends at its natural last day.
+--     (YDAY is exempt: IsLiveBucket is always FALSE, so it ends on the chosen day.)
 _Period End =
 VAR A    = [_Anchor Date]
 VAR L    = [_Latest Data Date]
@@ -114,7 +119,7 @@ VAR IsLiveBucket =
         FALSE()
     )
 RETURN
-    IF( IsLiveBucket, MIN( A, L ), BEnd )
+    IF( IsLiveBucket, L, BEnd )                           -- LIVE -> today (L); FINISHED -> bucket end
 
 -- (5) First day of the immediately-previous equivalent period.
 _Prev Start =
@@ -399,12 +404,15 @@ scary -86% becomes the real number, and the subtitle proves what it's comparing.
 ---
 
 ## Assumptions & notes (read these)
-- **Live vs finished is automatic**, decided by `_Latest Data Date` (the newest date in the whole
-  model, ignoring slicers):
-  - Latest data = 7 Jun, you view **June** → live → **1–7 Jun vs 1–7 May vs 1–7 Jun 2025**.
-  - You pick **any date in finished May** (e.g. 25 May) → not the live bucket → **full May vs full
-    April vs full May 2025**. The exact day you clicked in May does not matter.
-  - Same logic for WTD / QTD / YTD: in the live week/quarter/year → to-date; in a past one → full.
+- **The selected date only picks the bucket; a live period runs to today.** Decided by
+  `_Latest Data Date` (newest date in the model, ignoring slicers):
+  - Latest data = 7 Jun. Pick **26 Apr** with **QTD** → it's the live Q2 → **1 Apr–7 Jun** (April +
+    May + June-to-date) vs **1 Jan–~7 Mar** (same point of Q1) vs **1 Apr–7 Jun 2025**. The day 26
+    Apr does not cap the window.
+  - Pick **any date in 2026** with **YTD** → **1 Jan–7 Jun** vs prior-year-to-same-point.
+  - Pick **any date in a finished period** (e.g. 25 May with MTD, or a Q1 date with QTD) → **full**
+    May / full Q1, etc. The exact day does not matter.
+  - **YDAY** is the exception: it always shows the single day you selected.
 - **Full periods compare to the WHOLE previous/PY bucket** — not "the same number of days in". This
   is the fix for the 28-vs-31 bug: a finished **28-day February compares to the full 31-day
   January** (and full Feb last year), a finished **90-day quarter compares to the full 92-day prior
