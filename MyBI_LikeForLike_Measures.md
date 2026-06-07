@@ -485,6 +485,72 @@ RETURN SWITCH( TRUE(), v > 0, "#1E7D32", v < 0, "#C62828", "#9E9E9E" )
 Sessions vs LY Color =
 VAR v = [Sessions vs LY %]
 RETURN SWITCH( TRUE(), v > 0, "#1E7D32", v < 0, "#C62828", "#9E9E9E" )
+
+-- (f) Labelled + COMPACT text for the PREVIOUS and the LAST-YEAR values.
+--     Keep the numeric [... (Prev LfL)] / [... (PY LfL)] measures (the % and Diff
+--     measures need the raw number) and use THESE on the card instead.
+--     Prev Label / PY Label rename themselves with the toggle.
+--     Compact rule: >= 1,000,000 -> M ; >= 1,000 -> K (1 decimal) ; else plain.
+--     e.g. YDAY -> "Previous Day : 10" ; value 1,252 -> "Previous Month : 1.3K".
+Prev Label =
+SWITCH( SELECTEDVALUE('Period'[Period], "MTD"),
+    "YDAY", "Previous Day",
+    "WTD",  "Previous Week",
+    "MTD",  "Previous Month",
+    "QTD",  "Previous Quarter",
+    "YTD",  "Previous Year",
+    "Previous Month"
+)
+
+PY Label =
+SWITCH( SELECTEDVALUE('Period'[Period], "MTD"),
+    "YDAY", "Same Day LY",
+    "WTD",  "Same Week LY",
+    "MTD",  "Same Month LY",
+    "QTD",  "Same Quarter LY",
+    "YTD",  "Same Year LY",
+    "Same Month LY"
+)
+
+Users (Prev LfL) Display =
+VAR val = [Users (Prev LfL)]
+VAR txt =
+    SWITCH( TRUE(),
+        ABS( val ) >= 1000000, FORMAT( val / 1000000, "#,0.0" ) & "M",
+        ABS( val ) >= 1000,    FORMAT( val / 1000, "#,0.0" ) & "K",
+        FORMAT( val, "#,0" )
+    )
+RETURN [Prev Label] & " : " & txt
+
+Sessions (Prev LfL) Display =
+VAR val = [Sessions (Prev LfL)]
+VAR txt =
+    SWITCH( TRUE(),
+        ABS( val ) >= 1000000, FORMAT( val / 1000000, "#,0.0" ) & "M",
+        ABS( val ) >= 1000,    FORMAT( val / 1000, "#,0.0" ) & "K",
+        FORMAT( val, "#,0" )
+    )
+RETURN [Prev Label] & " : " & txt
+
+Users (PY LfL) Display =
+VAR val = [Users (PY LfL)]
+VAR txt =
+    SWITCH( TRUE(),
+        ABS( val ) >= 1000000, FORMAT( val / 1000000, "#,0.0" ) & "M",
+        ABS( val ) >= 1000,    FORMAT( val / 1000, "#,0.0" ) & "K",
+        FORMAT( val, "#,0" )
+    )
+RETURN [PY Label] & " : " & txt
+
+Sessions (PY LfL) Display =
+VAR val = [Sessions (PY LfL)]
+VAR txt =
+    SWITCH( TRUE(),
+        ABS( val ) >= 1000000, FORMAT( val / 1000000, "#,0.0" ) & "M",
+        ABS( val ) >= 1000,    FORMAT( val / 1000, "#,0.0" ) & "K",
+        FORMAT( val, "#,0" )
+    )
+RETURN [PY Label] & " : " & txt
 ```
 
 **Wire it on the card:**
