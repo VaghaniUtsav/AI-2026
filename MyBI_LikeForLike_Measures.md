@@ -13,11 +13,13 @@ in the date slicer. The **latest data date** = the newest date in the whole mode
 slicer — the platform's real "today". The engine compares the anchor's period to the latest-data
 period: if they are the **same bucket**, the period is still **live**, so it ends **at the anchor**
 (to-date). If the anchor is in an **earlier, finished bucket**, the period ends at the bucket's
-**natural last day** (full period). Previous and Prior-Year windows then cover the **same number of
-days from their own start**, clamped so they never spill past their bucket. Result: pick a date in
-the live month → 1–7 Jun vs 1–7 May vs 1–7 Jun 2025; pick any date in finished May → full May vs
-full April vs full May 2025. Seven small "boundary" measures compute the dates once; every value
-and label measure just reads them.
+**natural last day** (full period). Then the comparison switches on whether the current window is
+**full** (its end = the bucket's last day) or **partial**: a **full** period compares to the
+**whole** previous / prior-year bucket (full Feb → full Jan, even though 28 ≠ 31 days; full Q1 →
+full Q4; leap years handled); a **partial** period compares to the **same number of days** into the
+prior bucket, clamped. Result: live month → 1–7 Jun vs 1–7 May vs 1–7 Jun 2025; any finished month
+(pick the 14th or the 28th of Feb, doesn't matter) → full Feb vs full Jan vs full Feb LY. Nine small
+"boundary" measures compute the dates once; every value and label measure just reads them.
 
 ---
 
@@ -48,7 +50,7 @@ DATATABLE(
 
 ---
 
-## STEP 1 — Boundary engine (8 measures, hide them all)
+## STEP 1 — Boundary engine (9 measures, hide them all)
 
 Put these in a `_Engine` display folder and **hide** them (right-click → Hide). They return dates,
 not numbers, so they never go on a visual directly. Create them in this order (each one references
@@ -75,17 +77,13 @@ RETURN
         DATE( YEAR(A), MONTH(A), 1 )                      -- fallback = MTD
     )
 
--- (3) End of the CURRENT period.
---     If the anchor's bucket is the same one that holds the latest data, the
---     period is LIVE -> end at the anchor (to-date, capped at the latest data day).
---     Otherwise the bucket is FINISHED -> end at the bucket's natural last day.
-_Period End =
+-- (3) The natural LAST day of the bucket that contains the anchor.
+_Bucket End =
 VAR A   = [_Anchor Date]
-VAR L   = [_Latest Data Date]
 VAR P   = SELECTEDVALUE('Period'[Period], "MTD")
 VAR S   = [_Period Start]
 VAR Qtr = ROUNDUP( MONTH(A) / 3, 0 )
-VAR BucketEnd =
+RETURN
     SWITCH( P,
         "YDAY", A,                                        -- a day is atomic
         "WTD",  S + 6,                                    -- Sunday of the week
@@ -94,19 +92,31 @@ VAR BucketEnd =
         "YTD",  DATE( YEAR(A), 12, 31 ),                  -- 31 Dec
         EOMONTH( A, 0 )
     )
+
+-- (4) End of the CURRENT period.
+--     If the anchor's bucket is the one that holds the latest data, the period is
+--     LIVE -> end at the anchor (capped at the latest data day). Otherwise the
+--     bucket is FINISHED -> end at its natural last day (_Bucket End).
+_Period End =
+VAR A    = [_Anchor Date]
+VAR L    = [_Latest Data Date]
+VAR P    = SELECTEDVALUE('Period'[Period], "MTD")
+VAR S    = [_Period Start]
+VAR BEnd = [_Bucket End]
+VAR Qtr  = ROUNDUP( MONTH(A) / 3, 0 )
 VAR IsLiveBucket =
     SWITCH( P,
         "YDAY", FALSE(),                                  -- a single day is never "partial"
-        "WTD",  L >= S && L <= BucketEnd,
+        "WTD",  L >= S && L <= BEnd,
         "MTD",  YEAR(A) = YEAR(L) && MONTH(A) = MONTH(L),
         "QTD",  YEAR(A) = YEAR(L) && Qtr = ROUNDUP( MONTH(L) / 3, 0 ),
         "YTD",  YEAR(A) = YEAR(L),
         FALSE()
     )
 RETURN
-    IF( IsLiveBucket, MIN( A, L ), BucketEnd )
+    IF( IsLiveBucket, MIN( A, L ), BEnd )
 
--- (4) First day of the immediately-previous equivalent period.
+-- (5) First day of the immediately-previous equivalent period.
 _Prev Start =
 VAR A = [_Anchor Date]
 VAR P = SELECTEDVALUE('Period'[Period], "MTD")
@@ -121,13 +131,15 @@ RETURN
         EDATE( S, -1 )
     )
 
--- (5) End of the previous period: same number of days into its bucket as the
---     current period (Offset), CLAMPED so it never spills past that bucket's end.
---     LIVE current -> partial prev; FINISHED current (Offset = full length) -> full prev.
+-- (6) End of the previous period. The key fix:
+--     FULL current period (E = bucket end)  -> the WHOLE previous bucket
+--        (full Feb -> full Jan; 28 vs 31 days no longer matters).
+--     PARTIAL current period (in progress) -> same days in, clamped to bucket end.
 _Prev End =
 VAR P      = SELECTEDVALUE('Period'[Period], "MTD")
 VAR S      = [_Period Start]
 VAR E      = [_Period End]
+VAR IsFull = ( E = [_Bucket End] )                        -- did the current window cover the whole bucket?
 VAR Offset = INT( E - S )                                 -- 0-based length of the current window
 VAR PStart = [_Prev Start]
 VAR PBucketEnd =
@@ -140,9 +152,9 @@ VAR PBucketEnd =
         EOMONTH( PStart, 0 )
     )
 RETURN
-    MIN( PStart + Offset, PBucketEnd )
+    IF( IsFull, PBucketEnd, MIN( PStart + Offset, PBucketEnd ) )
 
--- (6) HELPER (WTD only): Monday of the SAME ISO week, one ISO year earlier.
+-- (7) HELPER (WTD only): Monday of the SAME ISO week, one ISO year earlier.
 --     ISO rules: weeks start Monday; week 1 is the week containing 4 Jan; the
 --     week's ISO year is the year of its Thursday. ISO week NUMBER is computed
 --     MANUALLY (this PBIRS build has no ISOWEEKNUM) as the count of whole weeks
@@ -168,7 +180,7 @@ VAR TgtWeek   = MIN( ISOWeek, MaxWeek )                   -- clamp 53 -> 52 if n
 RETURN
     PWeek1Mon + ( TgtWeek - 1 ) * 7                       -- Monday of the same ISO week last year
 
--- (7) First day of the same period one year earlier.
+-- (8) First day of the same period one year earlier.
 _PY Start =
 VAR A = [_Anchor Date]
 VAR P = SELECTEDVALUE('Period'[Period], "MTD")
@@ -183,11 +195,12 @@ RETURN
         DATE( YEAR(S) - 1, MONTH(S), 1 )
     )
 
--- (8) End of the PY period: same Offset + clamp rule as _Prev End.
+-- (9) End of the PY period: same FULL-vs-PARTIAL rule as _Prev End.
 _PY End =
 VAR P       = SELECTEDVALUE('Period'[Period], "MTD")
 VAR S       = [_Period Start]
 VAR E       = [_Period End]
+VAR IsFull  = ( E = [_Bucket End] )
 VAR Offset  = INT( E - S )
 VAR PYStart = [_PY Start]
 VAR PYBucketEnd =
@@ -200,7 +213,7 @@ VAR PYBucketEnd =
         EOMONTH( PYStart, 0 )
     )
 RETURN
-    MIN( PYStart + Offset, PYBucketEnd )
+    IF( IsFull, PYBucketEnd, MIN( PYStart + Offset, PYBucketEnd ) )
 ```
 
 ---
@@ -392,6 +405,11 @@ scary -86% becomes the real number, and the subtitle proves what it's comparing.
   - You pick **any date in finished May** (e.g. 25 May) → not the live bucket → **full May vs full
     April vs full May 2025**. The exact day you clicked in May does not matter.
   - Same logic for WTD / QTD / YTD: in the live week/quarter/year → to-date; in a past one → full.
+- **Full periods compare to the WHOLE previous/PY bucket** — not "the same number of days in". This
+  is the fix for the 28-vs-31 bug: a finished **28-day February compares to the full 31-day
+  January** (and full Feb last year), a finished **90-day quarter compares to the full 92-day prior
+  quarter**, and **leap years** compare full-to-full. Offset alignment is used **only** while a
+  period is still in progress (partial).
 - **This depends on `_Latest Data Date` being correct.** It reads `MAX('SESSION USAGE'[Date])` with
   all filters removed. If your latest rows ever lag (e.g. a slow refresh), "live" shifts with the
   data, which is what you want.
