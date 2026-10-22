@@ -77,7 +77,7 @@ LOGGER = logging.getLogger("population_evidence_tool")
 # ---------------------------------------------------------------------------
 # CONFIGURATION
 # ---------------------------------------------------------------------------
-VERSION = "2026-10-22h"  # printed at the start, so the log shows which file ran
+VERSION = "2026-10-22i"  # printed at the start, so the log shows which file ran
 LOG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "population_evidence_tool.log")
 BASE_DIR = (r"K:\Workgroups\Support\Business Management & Automation"
             r"\03_Projekte\Aktiv\[SEG] Population Request Tool")
@@ -1149,6 +1149,10 @@ def fill_evidences(pop, ev, samples, pictures):
         pop.Range(f"{SAMPLE_COL}{s.row}:{DATA_LAST_COL}{s.row}").Copy(ev.Range(f"{SAMPLE_COL}{row}"))
         result = ev.Range(f"{SAMPLE_COL}{row}:{NUMBER_COL}{row}")
         result.Value = result.Value  # B is a formula in Population - keep only its result
+    # Pictures only while Evidences is the active sheet: on another one, Excel stores them under rows
+    # rounded to the zoom of Evidences (115% in the template) - they slid ~9pt higher per block
+    was_active = ev.Parent.ActiveSheet
+    ev.Activate()
     for s, files, label in zip(samples, pictures, _label_rows(len(samples))):
         _write_label(ev, label, s)
         left = ev.Range("C1").Left
@@ -1159,6 +1163,7 @@ def fill_evidences(pop, ev, samples, pictures):
                 except Exception as e:
                     LOGGER.warning(f"Sample {s.number}: {kind} picture could not be inserted - {e}")
             left += width
+    was_active.Activate()
     LOGGER.info(f"'{ev.Name}' filled with {len(samples)} sample(s).")
 
 
