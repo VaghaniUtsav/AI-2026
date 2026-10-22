@@ -27,10 +27,11 @@ Process 2 - Evidences, for every "Selected" sample:
      _Evidences\\<date-time>\\
  12. "Evidences" sheet like the manual version: the selected rows under the
      header (row 10), then one block per sample - red label (number and
-     document number), document (C-L), workflow (M-S) and invoice picture (T-Z).
+     document number), then document, workflow and invoice picture side by
+     side from column C, large enough to read at 100% zoom.
 
 Usage:
-    python population_evidence_tool.py                    -> window to pick the period
+    python population_evidence_tool.py                    -> window to pick the year and quarter(s)
     python population_evidence_tool.py --from 01.07.2026 --to 30.09.2026
     python population_evidence_tool.py --columns          -> only show SAP columns,
                                                              write nothing to Excel
@@ -42,13 +43,13 @@ Needs: pip install pywin32 keyring pymupdf playwright
 """
 
 import argparse
-import calendar
 import collections
 import contextlib
 import csv
 import datetime as dt
 import glob
 import logging
+import math
 import os
 import re
 import shutil
@@ -76,7 +77,7 @@ LOGGER = logging.getLogger("population_evidence_tool")
 # ---------------------------------------------------------------------------
 # CONFIGURATION
 # ---------------------------------------------------------------------------
-VERSION = "2026-10-22e"  # printed at the start, so the log shows which file ran
+VERSION = "2026-10-22g"  # printed at the start, so the log shows which file ran
 LOG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "population_evidence_tool.log")
 BASE_DIR = (r"K:\Workgroups\Support\Business Management & Automation"
             r"\03_Projekte\Aktiv\[SEG] Population Request Tool")
@@ -160,9 +161,15 @@ EVIDENCES_SHEET_NAME = "Evidences"
 EVIDENCES_HEADER_ROW = 10  # same columns B-X as the Population header
 EVIDENCES_FIRST_ROW = 11
 EVIDENCES_GAP_ROWS = 2  # empty rows between the table and the first block
-BLOCK_ROWS = 25  # one sample: red label row, pictures, 2 empty rows
-SLOT_ROWS = 22  # picture height in rows, starting under the label row
-EVIDENCE_SLOTS = {"document": ("C", "L"), "workflow": ("M", "S"), "invoice": ("T", "Z")}  # picture -> columns it may use
+BLOCK_ROWS = 43  # one sample: red label row, pictures, 2 empty rows
+SLOT_ROWS = 40  # picture height in rows, starting under the label row
+# On save Excel keeps about 220 pixels per inch of the size a picture is SHOWN at and throws the
+# rest away - a picture shown smaller stays blurry even zoomed in. So every picture is shown at
+# READABLE_SCALE points per pixel or larger, which also makes it readable at 100% zoom.
+READABLE_SCALE = 72 / 220
+# Picture -> width of its slot in points, side by side from column C. A slot holds at READABLE_SCALE:
+# the 1765 px FB03 picture, an A4 invoice page at INVOICE_DPI, a website page in 3 strips.
+EVIDENCE_SLOTS = {"document": 600, "workflow": 600, "invoice": 1330}
 PICTURE_MARGIN = 5  # points between a picture and the border of its slot
 # Fixed height for the rows below the header. Automatic heights differ between the tool's hidden
 # Excel and a normal one (laptop 2: 14.76 vs 14.57pt), so the pictures slid off their labels.
@@ -194,6 +201,7 @@ LINK_ICON = "@8S@"  # icon of a link in the attachment list
 LINK_TITLE_WORD = "EVIDENCE"  # several links: the (last) one with this in its title, else the last link
 DETAILS_BTN = "&DETAIL"  # 'Details' of the selected attachment - its row 'URL' holds the address
 WEBSITE_WIDTH = 1280  # browser width in pixels for the website picture
+STRIP_GAP = 20  # grey pixels between the strips of a long website page
 FOLDER_DIALOG_TITLE = "Browse for Files or Folders"  # Windows dialog opened by 'Download'
 # Folder for 'Download': SAP GUI's own folder (Documents\SAP\SAP GUI), the one the dialog suggests
 SAP_DOWNLOAD_DIR = os.path.join(shell.SHGetFolderPath(0, shellcon.CSIDL_PERSONAL, None, 0), "SAP", "SAP GUI")
@@ -214,14 +222,15 @@ Sample = collections.namedtuple("Sample", "row number doc_no fiscal_year ss_doc_
 # Helper functions
 # ---------------------------------------------------------------------------
 
+def _quarter(year, q):
+    """First and last day of quarter q (1-4)."""
+    return dt.date(year, 3 * q - 2, 1), dt.date(year + q // 4, 3 * q % 12 + 1, 1) - dt.timedelta(days=1)
+
+
 def _last_completed_quarter(today=None):
     today = today or dt.date.today()
-    q = (today.month - 1) // 3  # 0 = Q1 is currently running
-    if q == 0:
-        return dt.date(today.year - 1, 10, 1), dt.date(today.year - 1, 12, 31)
-    start = dt.date(today.year, 3 * (q - 1) + 1, 1)
-    end = dt.date(today.year, 3 * q + 1, 1) - dt.timedelta(days=1)
-    return start, end
+    q = (today.month - 1) // 3  # quarters completed this year - 0 = Q1 is currently running
+    return _quarter(today.year, q) if q else _quarter(today.year - 1, 4)
 
 
 def _parse_user_date(text):
@@ -244,9 +253,12 @@ def _ask_date(prompt, default):
             print(e)
 
 
-def _ask_period(default_from, default_to):
-    """Small window to pick the posting period - typed or chosen in a calendar.
+def _ask_period(today=None):
+    """Small window to pick the posting period: a year, then one or more of its
+    quarters next to each other (one period from the first to the last).
     Without a window (no tkinter) the dates are asked in the console."""
+    today = today or dt.date.today()
+    default_from, default_to = _last_completed_quarter(today)
     try:
         root = tk.Tk()
     except Exception:  # tk is None, or Windows can't show the window
@@ -254,72 +266,61 @@ def _ask_period(default_from, default_to):
     root.title("Period")  # short - the window is narrow
     root.resizable(False, False)
     root.attributes("-topmost", True)  # in front of the console it was started from
-    fields = []
-    for row, (label, default) in enumerate((("Posting date from", default_from), ("Posting date to", default_to))):
-        field = tk.StringVar(root, f"{default:%d.%m.%Y}")
-        tk.Label(root, text=label).grid(row=row, column=0, padx=8, pady=4, sticky="w")
-        tk.Entry(root, textvariable=field, width=12).grid(row=row, column=1, pady=4)
-        tk.Button(root, text="▼", command=lambda f=field: _pick_day(root, f)).grid(row=row, column=2, padx=8)
-        fields.append(field)
+    year = tk.IntVar(root, default_from.year)
+    ticks = [tk.BooleanVar(root, q == (default_from.month + 2) // 3) for q in range(1, 5)]
     period = []
+
+    def chosen():
+        qs = [q for q, tick in enumerate(ticks, 1) if tick.get()]
+        if not qs:
+            raise ValueError("Please tick at least one quarter.")
+        if qs != list(range(qs[0], qs[-1] + 1)):
+            raise ValueError("Please tick quarters that follow each other.")
+        return _quarter(year.get(), qs[0])[0], _quarter(year.get(), qs[-1])[1]
+
+    def show():
+        try:
+            dates.config(text="= {:%d.%m.%Y} – {:%d.%m.%Y}".format(*chosen()))
+        except ValueError as e:
+            dates.config(text=str(e))
+
+    def grey_out():
+        for q, box in enumerate(boxes, 1):
+            box.config(state="normal" if _quarter(year.get(), q)[1] < today else "disabled")  # not over yet
+        show()
+
+    def new_year(_):
+        for tick in ticks:
+            tick.set(False)
+        grey_out()
 
     def ok():
         try:
-            date_from, date_to = (_parse_user_date(f.get()) for f in fields)
+            period.extend(chosen())
         except ValueError as e:
-            messagebox.showerror("Invalid date", str(e), parent=root)
+            messagebox.showerror("Invalid period", str(e), parent=root)
             return
-        if date_from > date_to:
-            messagebox.showerror("Invalid period", "'from' is after 'to'.", parent=root)
-            return
-        period.extend((date_from, date_to))
         root.destroy()
 
+    tk.Label(root, text="Year").grid(row=0, column=0, padx=8, pady=4, sticky="w")
+    tk.OptionMenu(root, year, *range(today.year, today.year - 5, -1), command=new_year).grid(
+        row=0, column=1, columnspan=3, pady=4, sticky="w")
+    boxes = [tk.Checkbutton(root, text=f"Q{q}", variable=tick, command=show) for q, tick in enumerate(ticks, 1)]
+    for col, box in enumerate(boxes):
+        box.grid(row=1, column=col, padx=4)
+    dates = tk.Label(root, width=44)  # wide enough for the longest message - the window keeps its size
+    dates.grid(row=2, column=0, columnspan=4, padx=8)
     buttons = tk.Frame(root)
-    buttons.grid(row=2, column=0, columnspan=3, pady=8)
+    buttons.grid(row=3, column=0, columnspan=4, pady=8)
     tk.Button(buttons, text="OK", width=8, command=ok).pack(side="left", padx=4)
     tk.Button(buttons, text="Cancel", width=8, command=root.destroy).pack(side="left", padx=4)
     root.bind("<Return>", lambda e: ok())
     root.bind("<Escape>", lambda e: root.destroy())
+    grey_out()
     root.mainloop()
     if not period:
         raise RuntimeError("No period chosen - nothing done.")
     return tuple(period)
-
-
-def _pick_day(root, field):
-    """Month calendar at the mouse - clicking a day puts it into field."""
-    try:
-        month = _parse_user_date(field.get()).replace(day=1)
-    except ValueError:
-        month = dt.date.today().replace(day=1)
-    popup = tk.Toplevel(root)
-    popup.title("Day")
-    popup.resizable(False, False)
-    popup.attributes("-topmost", True)
-    popup.geometry(f"+{root.winfo_pointerx()}+{root.winfo_pointery()}")
-    popup.grab_set()  # the period window waits until a day is picked or the calendar is closed
-
-    def pick(day):
-        field.set(f"{day:%d.%m.%Y}")
-        popup.destroy()
-
-    def show(first):  # first = 1st of the month to show
-        for widget in popup.winfo_children():
-            widget.destroy()
-        previous, following = (first - dt.timedelta(days=1)).replace(day=1), (first + dt.timedelta(days=31)).replace(day=1)
-        tk.Button(popup, text="◀", command=lambda: show(previous)).grid(row=0, column=0)
-        tk.Label(popup, text=f"{calendar.month_name[first.month]} {first.year}").grid(row=0, column=1, columnspan=5)
-        tk.Button(popup, text="▶", command=lambda: show(following)).grid(row=0, column=6)
-        for col, name in enumerate(("Mo", "Tu", "We", "Th", "Fr", "Sa", "Su")):
-            tk.Label(popup, text=name).grid(row=1, column=col)
-        for row, week in enumerate(calendar.monthcalendar(first.year, first.month), start=2):
-            for col, day in enumerate(week):
-                if day:
-                    tk.Button(popup, text=day, width=3, relief="flat",
-                              command=lambda d=day: pick(first.replace(day=d))).grid(row=row, column=col)
-
-    show(month)
 
 
 def _parse_sap_date(text):
@@ -758,15 +759,36 @@ def _pdf_text(path):
 
 def _website_as_png(url, png):
     """Picture of the whole web page, top to bottom, taken with a hidden Edge
-    (the installed one - Playwright downloads no browser)."""
+    (the installed one - Playwright downloads no browser). The page is kept as
+    <name>_page.png; the picture for Excel shows it in strips side by side."""
+    page_png = os.path.splitext(png)[0] + "_page.png"
     with sync_playwright() as p:
         browser = p.chromium.launch(channel="msedge")
         page = browser.new_page(viewport={"width": WEBSITE_WIDTH, "height": 900})
         response = page.goto(url, wait_until="networkidle", timeout=60000)
         if response and not response.ok:  # no error page as evidence
             raise RuntimeError(f"the website answered with error {response.status}")
-        page.screenshot(path=png, full_page=True)
+        page.screenshot(path=page_png, full_page=True)
         browser.close()
+    return _as_strips(page_png, png)
+
+
+def _as_strips(path, png):
+    """The picture cut into equal strips, side by side with a grey gap - each strip
+    no taller than a slot shows at READABLE_SCALE, so a long page stays readable."""
+    src = pymupdf.Pixmap(path)
+    if src.alpha:
+        src = pymupdf.Pixmap(src, 0)  # the grey gap must not be see-through
+    slot_px = (SLOT_ROWS * EVIDENCE_ROW_HEIGHT - 2 * PICTURE_MARGIN) / READABLE_SCALE
+    n = math.ceil(src.height / slot_px)
+    part = math.ceil(src.height / n)
+    out = pymupdf.Pixmap(src.colorspace, pymupdf.IRect(0, 0, n * src.width + (n - 1) * STRIP_GAP, part), False)
+    out.clear_with(200)
+    for i in range(n):
+        x = i * (src.width + STRIP_GAP)
+        src.set_origin(x, -i * part)  # strip i of the page now lies at x, top
+        out.copy(src, pymupdf.IRect(x, 0, x + src.width, part))
+    out.save(png)
     return png
 
 
@@ -1102,11 +1124,11 @@ def _write_label(ws, row, s):
     number.Borders.LineStyle = XL_CONTINUOUS
 
 
-def _insert_picture(ws, path, top_row, first_col, last_col):
-    """Embeds the picture in its slot - columns first_col to last_col, SLOT_ROWS
+def _insert_picture(ws, path, top_row, slot_left, slot_width):
+    """Embeds the picture in its slot - slot_width points from slot_left, SLOT_ROWS
     rows from top_row - as large as fits, proportions kept."""
-    left = ws.Range(f"{first_col}1").Left + PICTURE_MARGIN
-    right = ws.Cells(1, ws.Range(f"{last_col}1").Column + 1).Left - PICTURE_MARGIN
+    left = slot_left + PICTURE_MARGIN
+    right = slot_left + slot_width - PICTURE_MARGIN
     top = ws.Rows(top_row).Top + PICTURE_MARGIN
     bottom = ws.Rows(top_row + SLOT_ROWS).Top - PICTURE_MARGIN
     picture = ws.Shapes.AddPicture(path, False, True, left, top, -1, -1)  # embedded, not linked
@@ -1128,13 +1150,14 @@ def fill_evidences(pop, ev, samples, pictures):
         result.Value = result.Value  # B is a formula in Population - keep only its result
     for s, files, label in zip(samples, pictures, _label_rows(len(samples))):
         _write_label(ev, label, s)
-        for kind, (first_col, last_col) in EVIDENCE_SLOTS.items():
-            if kind not in files:
-                continue
-            try:
-                _insert_picture(ev, files[kind], label + 1, first_col, last_col)
-            except Exception as e:
-                LOGGER.warning(f"Sample {s.number}: {kind} picture could not be inserted - {e}")
+        left = ev.Range("C1").Left
+        for kind, width in EVIDENCE_SLOTS.items():
+            if kind in files:  # a missing picture leaves its slot empty
+                try:
+                    _insert_picture(ev, files[kind], label + 1, left, width)
+                except Exception as e:
+                    LOGGER.warning(f"Sample {s.number}: {kind} picture could not be inserted - {e}")
+            left += width
     LOGGER.info(f"'{ev.Name}' filled with {len(samples)} sample(s).")
 
 
@@ -1200,11 +1223,12 @@ def main():
         LOGGER.info("Done.")
         return
 
-    default_from, default_to = _last_completed_quarter()
-    date_from = _parse_user_date(args.date_from) if args.date_from else default_from
-    date_to = _parse_user_date(args.date_to) if args.date_to else default_to
-    if not (args.date_from and args.date_to):
-        date_from, date_to = _ask_period(date_from, date_to)  # a date given with --from/--to is pre-filled
+    if args.date_from or args.date_to:  # a date not given: from/to of the last completed quarter
+        default_from, default_to = _last_completed_quarter()
+        date_from = _parse_user_date(args.date_from) if args.date_from else default_from
+        date_to = _parse_user_date(args.date_to) if args.date_to else default_to
+    else:
+        date_from, date_to = _ask_period()
     if date_from > date_to:
         raise RuntimeError("'from' is after 'to'.")
 
