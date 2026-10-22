@@ -77,7 +77,7 @@ LOGGER = logging.getLogger("population_evidence_tool")
 # ---------------------------------------------------------------------------
 # CONFIGURATION
 # ---------------------------------------------------------------------------
-VERSION = "2026-10-22g"  # printed at the start, so the log shows which file ran
+VERSION = "2026-10-22h"  # printed at the start, so the log shows which file ran
 LOG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "population_evidence_tool.log")
 BASE_DIR = (r"K:\Workgroups\Support\Business Management & Automation"
             r"\03_Projekte\Aktiv\[SEG] Population Request Tool")
@@ -768,15 +768,16 @@ def _website_as_png(url, png):
         response = page.goto(url, wait_until="networkidle", timeout=60000)
         if response and not response.ok:  # no error page as evidence
             raise RuntimeError(f"the website answered with error {response.status}")
-        page.screenshot(path=page_png, full_page=True)
+        page_bytes = page.screenshot(path=page_png, full_page=True)
         browser.close()
-    return _as_strips(page_png, png)
+    # from memory: reading the page back from K: right away was refused once ('Permission denied')
+    return _as_strips(page_bytes, png)
 
 
-def _as_strips(path, png):
-    """The picture cut into equal strips, side by side with a grey gap - each strip
-    no taller than a slot shows at READABLE_SCALE, so a long page stays readable."""
-    src = pymupdf.Pixmap(path)
+def _as_strips(picture, png):
+    """The picture (PNG bytes) cut into equal strips, side by side with a grey gap - each
+    strip no taller than a slot shows at READABLE_SCALE, so a long page stays readable."""
+    src = pymupdf.Pixmap(picture)
     if src.alpha:
         src = pymupdf.Pixmap(src, 0)  # the grey gap must not be see-through
     slot_px = (SLOT_ROWS * EVIDENCE_ROW_HEIGHT - 2 * PICTURE_MARGIN) / READABLE_SCALE
