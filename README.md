@@ -17,7 +17,7 @@ Process 1 - Population (same steps as population_request_tool.py):
   8. Filter "Population" on "Sample Selected ?" = "Selected", save
 
 Process 2 - Evidences, for every "Selected" sample:
-  9. FB03 'Data Entry View' of the document -> picture
+  9. FB03 'Data Entry View' of the document, line items in layout /EVI -> picture
  10. ZRFIZWF00001 with the Samsung Document Number -> 'Display Workflow
      History' -> picture
  11. FB03 again, "File attachment" -> the file whose title starts with C460
@@ -77,7 +77,7 @@ LOGGER = logging.getLogger("population_evidence_tool")
 # ---------------------------------------------------------------------------
 # CONFIGURATION
 # ---------------------------------------------------------------------------
-VERSION = "2026-10-23b"  # printed at the start, so the log shows which file ran
+VERSION = "2026-10-23c"  # printed at the start, so the log shows which file ran
 LOG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "population_evidence_tool.log")
 BASE_DIR = (r"K:\Workgroups\Support\Business Management & Automation"
             r"\03_Projekte\Aktiv\[SEG] Population Request Tool")
@@ -189,6 +189,9 @@ FB03_COMPANY_FIELD = "wnd[0]/usr/ctxtRF05L-BUKRS"
 FB03_YEAR_FIELD = "wnd[0]/usr/txtRF05L-GJAHR"
 FB03_VIEW_BTN = "wnd[0]/tbar[1]/btn[33]"  # 'General Ledger View' <-> 'Data Entry View'
 FB03_ATTACH_BTN = "wnd[0]/tbar[1]/btn[31]"  # 'File attachment'
+FB03_LAYOUT = "/EVI"  # the user's layout for the line items in the document picture
+ALV_LAYOUT_MENU = "&MB_VARIANT"  # standard ALV list toolbar: the layout button ...
+ALV_CHOOSE_LAYOUT = "&LOAD"  # ... and its 'Choose Layout...'
 INVOICE_PREFIX = "C460"  # the invoice is the attachment whose title starts with this (the last one)
 INVOICE_TYPES = (".pdf", ".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp", ".gif")
 INVOICE_DPI = 150  # resolution of the invoice picture
@@ -503,11 +506,24 @@ def _open_fb03(session, s):
     return title
 
 
-def _capture_document(session, s, stem):
-    """Opens the document in FB03 ('Data Entry View') and saves a picture of it."""
+def _data_entry_view(session, s):
+    """Opens the document of the sample in FB03, in its 'Data Entry View'."""
     if "General Ledger View" in _open_fb03(session, s):
         session.findById(FB03_VIEW_BTN).press()
         _wait_until_idle(session)
+
+
+def _capture_document(session, s, stem):
+    """Opens the document in FB03 ('Data Entry View'), shows its line items in the
+    layout FB03_LAYOUT and saves a picture of it."""
+    _data_entry_view(session, s)
+    try:
+        _choose_layout(session, FB03_LAYOUT)
+    except Exception as e:  # the picture still shows the right document, only in SAP's standard layout
+        LOGGER.warning(f"Sample {s.number}: layout {FB03_LAYOUT} could not be chosen - the document picture "
+                       f"shows SAP's standard layout ({e})", exc_info=not isinstance(e, RuntimeError))
+        _close_popups(session)
+        _data_entry_view(session, s)  # a fresh screen - no menu or window left open from the try
     png = stem + ".png"
     session.findById("wnd[0]").HardCopy(png, 2)  # 2 = PNG
     if not os.path.exists(png):  # not isfile() - on the K: share it says False for files that exist
@@ -603,11 +619,48 @@ def _attachment_list(session):
     if session.Children.Count > 1:
         for grid in _grids(session.findById("wnd[1]/usr")):
             if "Title" in _column_titles(grid):
-                for start in range(0, grid.RowCount, max(int(grid.VisibleRowCount), 1)):
-                    grid.firstVisibleRow = start  # like read_grid: rows not shown yet would read as empty
+                _load_rows(grid)
                 return grid
     msg = session.findById("wnd[0]/sbar").Text
     raise RuntimeError(f"the 'File attachment' list did not open. SAP message: {msg or '(none)'}")
+
+
+def _load_rows(grid):
+    """Scrolls an ALV list through once, so that every row is loaded - like read_grid,
+    rows not shown yet would read as empty."""
+    for start in range(0, grid.RowCount, max(int(grid.VisibleRowCount), 1)):
+        grid.firstVisibleRow = start
+
+
+def _choose_layout(session, layout):
+    """Shows the line items on the FB03 screen in this layout - 'Choose Layout...' in the
+    toolbar of the list, then the layout in the list of layouts."""
+    items = next(_grids(session.findById("wnd[0]/usr")), None)
+    if items is None:
+        raise RuntimeError("no list of line items on the screen")
+    items.pressToolbarContextButton(ALV_LAYOUT_MENU)
+    items.selectContextMenuItem(ALV_CHOOSE_LAYOUT)
+    _wait_until_idle(session)
+    layouts = next(_grids(session.findById("wnd[1]/usr")), None) if session.Children.Count > 1 else None
+    if layouts is None:
+        raise RuntimeError("the 'Choose Layout' window did not open")
+    _load_rows(layouts)
+    row = _layout_row(layouts, layout)
+    if row is None:
+        raise RuntimeError(f"{layout} is not in the list of layouts")
+    layouts.currentCellRow = row
+    layouts.selectedRows = str(row)
+    layouts.clickCurrentCell()
+    _wait_until_idle(session)
+    if session.Children.Count > 1:
+        raise RuntimeError("the 'Choose Layout' window did not close")
+
+
+def _layout_row(grid, layout):
+    """Row of the layout in the list of layouts (its exact name in any column), None if it isn't there."""
+    columns = list(_column_titles(grid).values())
+    rows = [r for r in range(grid.RowCount) if any(grid.GetCellValue(r, c).strip() == layout for c in columns)]
+    return rows[0] if rows else None
 
 
 def _grids(container):
