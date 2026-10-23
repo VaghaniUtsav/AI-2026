@@ -77,7 +77,7 @@ LOGGER = logging.getLogger("population_evidence_tool")
 # ---------------------------------------------------------------------------
 # CONFIGURATION
 # ---------------------------------------------------------------------------
-VERSION = "2026-10-22i"  # printed at the start, so the log shows which file ran
+VERSION = "2026-10-23b"  # printed at the start, so the log shows which file ran
 LOG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "population_evidence_tool.log")
 BASE_DIR = (r"K:\Workgroups\Support\Business Management & Automation"
             r"\03_Projekte\Aktiv\[SEG] Population Request Tool")
@@ -181,7 +181,7 @@ XL_CENTER = -4108
 XL_CONTINUOUS = 1
 XL_MOVE = 2  # picture moves with its cells but keeps its size, like the manual ones
 EVIDENCE_DIR_NAME = "_Evidences"
-COMPANY_CODE = "C460"
+COMPANY_CODE = "C460"  # FBL4N population and FB03 documents - always C460 (user, 2026-10-23)
 
 # FB03 (standard screen) and its "File attachment" box (company-specific)
 FB03_DOC_FIELD = "wnd[0]/usr/txtRF05L-BELNR"
@@ -413,7 +413,8 @@ def _ensure_dynamic_selections(session):
 
 
 def run_fbl4n(session, date_from, date_to):
-    LOGGER.info(f"Starting FBL4N for posting date {date_from:%d.%m.%Y} - {date_to:%d.%m.%Y} ...")
+    LOGGER.info(f"Starting FBL4N for company code {COMPANY_CODE}, posting date "
+                f"{date_from:%d.%m.%Y} - {date_to:%d.%m.%Y} ...")
     session.findById("wnd[0]").maximize()
     session.findById("wnd[0]/tbar[0]/okcd").text = "/nFBL4N"
     session.findById("wnd[0]").sendVKey(0)
@@ -423,6 +424,7 @@ def run_fbl4n(session, date_from, date_to):
     _fill_multiselect(session, GL_BTN, GL_ACCOUNTS, mode="include")
 
     session.findById("wnd[0]/usr/radX_AISEL").select()
+    session.findById("wnd[0]/usr/ctxtSD_BUKRS-LOW").text = COMPANY_CODE  # else SAP takes the one it remembers
     session.findById("wnd[0]/usr/ctxtSO_BUDAT-LOW").text = date_from.strftime(SAP_DATE_FORMAT)
     session.findById("wnd[0]/usr/ctxtSO_BUDAT-HIGH").text = date_to.strftime(SAP_DATE_FORMAT)
     session.findById("wnd[0]/usr/ctxtPA_VARI").text = SAP_LAYOUT
@@ -596,10 +598,13 @@ def _capture_workflow(session, s, stem):
 
 
 def _attachment_list(session):
-    """ALV list of the 'File attachment' popup (the grid with a 'Title' column)."""
+    """ALV list of the 'File attachment' popup (the grid with a 'Title' column), scrolled
+    through once so that every row is loaded - also the ones below the visible part."""
     if session.Children.Count > 1:
         for grid in _grids(session.findById("wnd[1]/usr")):
             if "Title" in _column_titles(grid):
+                for start in range(0, grid.RowCount, max(int(grid.VisibleRowCount), 1)):
+                    grid.firstVisibleRow = start  # like read_grid: rows not shown yet would read as empty
                 return grid
     msg = session.findById("wnd[0]/sbar").Text
     raise RuntimeError(f"the 'File attachment' list did not open. SAP message: {msg or '(none)'}")
@@ -830,8 +835,9 @@ def build_excel_rows(raw_rows):
                 if header in DATE_HEADERS:
                     d = _parse_sap_date(text)
                     # real date -> Excel takes it as a date without the
-                    # cell format having to be changed (sheet protection!)
-                    values.append(dt.datetime(d.year, d.month, d.day) if d else None)
+                    # cell format having to be changed (sheet protection!). In UTC: without a time zone
+                    # pywin32 takes it as local time and stores it 1-2 h early - the cell showed the day before
+                    values.append(dt.datetime(d.year, d.month, d.day, tzinfo=dt.timezone.utc) if d else None)
                 elif header in AMOUNT_HEADERS:
                     values.append(_parse_amount(text))
                 else:
