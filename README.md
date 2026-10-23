@@ -77,7 +77,7 @@ LOGGER = logging.getLogger("population_evidence_tool")
 # ---------------------------------------------------------------------------
 # CONFIGURATION
 # ---------------------------------------------------------------------------
-VERSION = "2026-10-23c"  # printed at the start, so the log shows which file ran
+VERSION = "2026-10-23d"  # printed at the start, so the log shows which file ran
 LOG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "population_evidence_tool.log")
 BASE_DIR = (r"K:\Workgroups\Support\Business Management & Automation"
             r"\03_Projekte\Aktiv\[SEG] Population Request Tool")
@@ -1114,6 +1114,17 @@ def filter_selected(ws, n_rows):
         LOGGER.warning(f"Filter could not be set ({e}) - please filter manually.")
 
 
+def _copy_number_formats(ws, last_row):
+    """Gives every written row the number formats of the first data row (dates TT.MM.JJJJ, amounts
+    #.##0,00). The template has them only for the rows of an earlier population - below that the
+    cells are 'General', so dates showed a time (00:00) and amounts lost their 2 decimals."""
+    try:
+        for col in map(chr, range(ord(DATA_FIRST_COL), ord(DATA_LAST_COL) + 1)):
+            ws.Range(f"{col}{FIRST_DATA_ROW}:{col}{last_row}").NumberFormat = ws.Range(f"{col}{FIRST_DATA_ROW}").NumberFormat
+    except Exception as e:  # e.g. a protected sheet - the values are right, only shown differently
+        LOGGER.warning(f"Number formats could not be copied down in '{ws.Name}' ({e}) - dates may show a time.")
+
+
 def process_template(path, rows):
     """Process 1 in Excel: fill Population, draw the samples, filter, save."""
     with _open_template(path) as (excel, wb):
@@ -1131,6 +1142,7 @@ def process_template(path, rows):
         last_row = FIRST_DATA_ROW + len(rows) - 1
         ws.Range(f"{DATA_FIRST_COL}{FIRST_DATA_ROW}:{DATA_LAST_COL}{last_row}").Value = tuple(rows)
         LOGGER.info(f"{len(rows)} rows written to '{SHEET_NAME}'.")
+        _copy_number_formats(ws, last_row)
 
         # 2. Draw samples (button in Main), from the real row count in C4
         wb.Worksheets(MAIN_SHEET_NAME).Range(MAIN_COUNT_CELL).Value = len(rows)
