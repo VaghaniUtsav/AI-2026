@@ -86,7 +86,7 @@ LOGGER = logging.getLogger("population_evidence_tool")
 # ---------------------------------------------------------------------------
 # CONFIGURATION
 # ---------------------------------------------------------------------------
-VERSION = "2026-10-26b"  # printed at the start, so the log shows which file ran
+VERSION = "2026-10-26c"  # printed at the start, so the log shows which file ran
 # No drive letter: the share is K: on one PC and something else on another (2026-10-26), so every
 # folder is found from the tool's own folder - this file lies in 'Program files - do not change'
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -829,14 +829,12 @@ def _pdf_text(path):
 
 
 def _website_as_png(url, png):
-    """Picture of the whole web page, top to bottom, taken with an Edge window placed off the
-    screen (the installed one - Playwright downloads no browser). The page is kept as
+    """Picture of the whole web page, top to bottom, taken with a hidden Edge
+    (the installed one - Playwright downloads no browser). The page is kept as
     <name>_page.png; the picture for Excel shows it in strips side by side."""
     page_png = os.path.splitext(png)[0] + "_page.png"
     with sync_playwright() as p:
-        # a real window, not headless: on j.boden's PC the proxy cut a headless Edge off (2026-10-26)
-        browser = p.chromium.launch(channel="msedge", headless=False,
-                                    args=["--window-position=-10000,-10000", "--hide-scrollbars"])
+        browser = p.chromium.launch(channel="msedge")
         page = browser.new_page(viewport={"width": WEBSITE_WIDTH, "height": 900})
         response = page.goto(url, wait_until="networkidle", timeout=60000)
         if response and not response.ok:  # no error page as evidence
