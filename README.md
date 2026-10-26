@@ -10,8 +10,8 @@ Process 1 - Population (same steps as population_request_tool.py):
   2. Get an SAP session (via sap_connector.py)
   3. Run FBL4N with the selections and read the ALV grid directly
   4. Save the raw data as CSV (traceability for the audit)
-  5. Back up the template to _Backup\\
-  6. Clear Population (D28:X) and fill it with the SAP data. Buttons,
+  5. Copy the master template to a new file in 'Excel results' - the master stays unchanged
+  6. Clear Population (D28:X) of the copy and fill it with the SAP data. Buttons,
      macros and the other tabs are left untouched.
   7. Write the row count to "Main" C4, run the sample macro behind the button (C5)
   8. Filter "Population" on "Sample Selected ?" = "Selected", save
@@ -37,7 +37,16 @@ Usage:
                                                              write nothing to Excel
     python population_evidence_tool.py --evidences-only   -> only Process 2, for the
                                                              samples already drawn
-    Add --template <file> to work on another workbook (e.g. a test copy).
+    Add --template <file> to copy another master (Process 1) or to fill another workbook
+    instead of the newest in 'Excel results' (--evidences-only), e.g. a test copy.
+Sales colleagues start it by double-click: 'Start here\\1 - Run new quarter', '2 - Redo pictures
+only' (= --evidences-only, backs the file up to _Backup first), see the guide. The end is shown
+in a message window.
+
+Folders - found from where this file lies, so the share may have any drive letter (or none):
+    ..\\ICFR Control Backup and config\\  master template, _Backup, _Rohdaten, _Evidences
+    ..\\Excel results\\                   one new Excel file per run
+    ..\\Logs\\                            population_evidence_tool.log
 
 Needs: pip install pywin32 keyring pymupdf playwright
 """
@@ -77,11 +86,15 @@ LOGGER = logging.getLogger("population_evidence_tool")
 # ---------------------------------------------------------------------------
 # CONFIGURATION
 # ---------------------------------------------------------------------------
-VERSION = "2026-10-23d"  # printed at the start, so the log shows which file ran
-LOG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "population_evidence_tool.log")
-BASE_DIR = (r"K:\Workgroups\Support\Business Management & Automation"
-            r"\03_Projekte\Aktiv\[SEG] Population Request Tool")
+VERSION = "2026-10-26b"  # printed at the start, so the log shows which file ran
+# No drive letter: the share is K: on one PC and something else on another (2026-10-26), so every
+# folder is found from the tool's own folder - this file lies in 'Program files - do not change'
+ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DATA_DIR = os.path.join(ROOT_DIR, "ICFR Control Backup and config")  # master template + the folders below
+RESULTS_DIR = os.path.join(ROOT_DIR, "Excel results")  # one new Excel file per run
+LOG_FILE = os.path.join(ROOT_DIR, "Logs", "population_evidence_tool.log")
 TEMPLATE_PATTERN = "GA-02-006_SEG.xls*"  # extension doesn't matter (.xlsx / .xlsm / .xlsb)
+RESULT_PATTERN = "GA-02-006_SEG*.xls*"  # also when renamed, as long as the name starts like this
 BACKUP_DIR_NAME = "_Backup"
 RAW_EXPORT_DIR_NAME = "_Rohdaten"  # existing folder name on the share
 SAVE_RAW_EXPORT = True
@@ -816,12 +829,14 @@ def _pdf_text(path):
 
 
 def _website_as_png(url, png):
-    """Picture of the whole web page, top to bottom, taken with a hidden Edge
-    (the installed one - Playwright downloads no browser). The page is kept as
+    """Picture of the whole web page, top to bottom, taken with an Edge window placed off the
+    screen (the installed one - Playwright downloads no browser). The page is kept as
     <name>_page.png; the picture for Excel shows it in strips side by side."""
     page_png = os.path.splitext(png)[0] + "_page.png"
     with sync_playwright() as p:
-        browser = p.chromium.launch(channel="msedge")
+        # a real window, not headless: on j.boden's PC the proxy cut a headless Edge off (2026-10-26)
+        browser = p.chromium.launch(channel="msedge", headless=False,
+                                    args=["--window-position=-10000,-10000", "--hide-scrollbars"])
         page = browser.new_page(viewport={"width": WEBSITE_WIDTH, "height": 900})
         response = page.goto(url, wait_until="networkidle", timeout=60000)
         if response and not response.ok:  # no error page as evidence
@@ -911,7 +926,7 @@ def build_excel_rows(raw_rows):
 
 
 def save_raw_export(columns, titles, rows, date_from, date_to):
-    target_dir = os.path.join(BASE_DIR, RAW_EXPORT_DIR_NAME)
+    target_dir = os.path.join(DATA_DIR, RAW_EXPORT_DIR_NAME)
     os.makedirs(target_dir, exist_ok=True)
     name = (f"FBL4N_{date_from:%Y%m%d}-{date_to:%Y%m%d}_"
             f"{dt.datetime.now():%Y-%m-%d_%H%M%S}.csv")
@@ -929,11 +944,36 @@ def save_raw_export(columns, titles, rows, date_from, date_to):
 # ---------------------------------------------------------------------------
 
 def find_template():
-    pattern = os.path.join(glob.escape(BASE_DIR), TEMPLATE_PATTERN)  # [SEG] in the path!
+    """The master template - every run copies it, nobody fills it."""
+    pattern = os.path.join(glob.escape(DATA_DIR), TEMPLATE_PATTERN)  # a folder name may contain [ ]
     matches = [p for p in glob.glob(pattern) if not os.path.basename(p).startswith("~$")]
-    if len(matches) != 1:
-        raise RuntimeError(f"Template not found unambiguously ({len(matches)} matches): {pattern}")
+    if not matches:
+        raise RuntimeError(f"The Excel template {TEMPLATE_PATTERN} was not found in\n{DATA_DIR}\n"
+                           f"Please put it into this folder and start again.")
+    if len(matches) > 1:
+        raise RuntimeError(f"{len(matches)} files match {TEMPLATE_PATTERN} in {DATA_DIR} - only one may be there.")
     return matches[0]
+
+
+def new_result_file(master, date_from, date_to):
+    """A new copy of the master in 'Excel results' for this run - people may use it however they want."""
+    os.makedirs(RESULTS_DIR, exist_ok=True)
+    stem, ext = os.path.splitext(os.path.basename(master))
+    target = os.path.join(RESULTS_DIR, f"{stem}_{date_from:%Y-%m-%d}_to_{date_to:%Y-%m-%d}_made_"
+                                       f"{dt.datetime.now():%Y-%m-%d_%H%M%S}{ext}")
+    shutil.copyfile(master, target)
+    LOGGER.info(f"New Excel file: {target}")
+    return target
+
+
+def latest_result():
+    """The file the last run made, for 'Redo pictures only': the newest CREATED one - people may
+    have opened and saved an older one since."""
+    matches = glob.glob(os.path.join(glob.escape(RESULTS_DIR), RESULT_PATTERN))  # Excel's ~$ lock file doesn't match
+    if not matches:
+        raise RuntimeError(f"There is no Excel file in\n{RESULTS_DIR}\nyet. Please double-click "
+                           f"'1 - Run new quarter' first.")
+    return max(matches, key=lambda p: os.stat(p).st_birthtime)
 
 
 def ensure_not_open(path):
@@ -948,7 +988,7 @@ def ensure_not_open(path):
 
 
 def backup_template(path):
-    target_dir = os.path.join(os.path.dirname(path), BACKUP_DIR_NAME)
+    target_dir = os.path.join(DATA_DIR, BACKUP_DIR_NAME)
     os.makedirs(target_dir, exist_ok=True)
     stem, ext = os.path.splitext(os.path.basename(path))
     target = os.path.join(target_dir, f"{stem}_{dt.datetime.now():%Y-%m-%d_%H%M%S}{ext}")
@@ -968,7 +1008,8 @@ def _open_template(path):
     try:
         wb = excel.Workbooks.Open(path, 0)  # 0 = don't update links
         if wb.ReadOnly:
-            raise RuntimeError("Template was opened read-only - aborting.")
+            raise RuntimeError(f"'{os.path.basename(path)}' could only be opened read-only - someone has probably "
+                               f"just opened it. Please start again when it is closed.")
         yield excel, wb
     except Exception:
         LOGGER.error("Aborted: the template was NOT saved and is unchanged.")
@@ -1240,7 +1281,7 @@ def fill_evidences(pop, ev, samples, pictures):
 
 def run_evidences(session, path):
     """Process 2: SAP pictures for every 'Selected' sample, then the Evidences sheet."""
-    run_dir = os.path.join(os.path.dirname(path), EVIDENCE_DIR_NAME, f"{dt.datetime.now():%Y-%m-%d_%H%M%S}")
+    run_dir = os.path.join(DATA_DIR, EVIDENCE_DIR_NAME, f"{dt.datetime.now():%Y-%m-%d_%H%M%S}")
     with _open_template(path) as (_, wb):
         pop = wb.Worksheets(SHEET_NAME)
         ev = wb.Worksheets(EVIDENCES_SHEET_NAME)
@@ -1248,7 +1289,8 @@ def run_evidences(session, path):
         _check_headers(ev, EVIDENCES_HEADER_ROW)
         samples = _selected_rows(pop)
         if not samples:
-            raise RuntimeError(f"No row in '{SHEET_NAME}' is marked '{SELECTED_VALUE}' - draw the samples first.")
+            raise RuntimeError(f"No row in '{SHEET_NAME}' is marked '{SELECTED_VALUE}' - draw the samples first "
+                               f"('1 - Run new quarter').")
         os.makedirs(run_dir)
         LOGGER.info(f"Taking SAP pictures for {len(samples)} sample(s) - please don't use SAP meanwhile ...")
         session.findById("wnd[0]").maximize()
@@ -1262,20 +1304,40 @@ def run_evidences(session, path):
                for kind in EVIDENCE_SLOTS if kind not in files]
     if missing:
         LOGGER.warning("Pictures missing - please add them manually: sample " + ", ".join(missing))
+    return missing
 
 
 # ---------------------------------------------------------------------------
 # Main program
 # ---------------------------------------------------------------------------
 
-def _template(args):
-    """The workbook to work on (--template or the one on K:) - must not be open elsewhere."""
-    path = os.path.abspath(args.template) if args.template else find_template()
+def _tell(title, text, error=False):
+    """Message window at the end, in front of SAP and Excel - nobody has to read the console.
+    True if 'Yes' was clicked. Without a window (no tkinter) the console has said it all."""
+    try:
+        root = tk.Tk()
+    except Exception:  # tk is None, or Windows can't show the window
+        return False
+    root.withdraw()
+    root.attributes("-topmost", True)
+    try:
+        if error:
+            messagebox.showerror(title, text, parent=root)
+            return False
+        return messagebox.askyesno(title, text, parent=root)
+    finally:
+        root.destroy()
+
+
+def _template(args, default):
+    """--template or the default file (find_template / latest_result) - must not be open elsewhere."""
+    path = os.path.abspath(args.template) if args.template else default()
     ensure_not_open(path)
     return path
 
 
 def main():
+    os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s",
                         handlers=[logging.StreamHandler(), logging.FileHandler(LOG_FILE, "a", "utf-8")])
     parser = argparse.ArgumentParser(description="Population + Evidences tool (FBL4N -> GA-02-006_SEG)")
@@ -1285,20 +1347,22 @@ def main():
                         help="Only show SAP columns, write nothing to Excel")
     parser.add_argument("--evidences-only", action="store_true",
                         help="Only Process 2 (Evidences) for the samples already drawn")
-    parser.add_argument("--template", help="Work on this workbook instead of the one on K: (e.g. a test copy)")
+    parser.add_argument("--template", help="Copy this file instead of the master template, or with "
+                        "--evidences-only fill it instead of the newest in 'Excel results' (e.g. a test copy)")
     args = parser.parse_args()
-    LOGGER.info(f"Population + Evidences tool, version {VERSION}")
+    # several colleagues share one log - the user name tells the runs apart
+    LOGGER.info(f"Population + Evidences tool, version {VERSION}, Windows user {os.environ.get('USERNAME', '?')}")
 
     if args.evidences_only:
-        template = _template(args)
+        template = _template(args, latest_result)
         backup_template(template)
         session, we_logged_in = sap_connector.get_sap_session()
         try:
-            run_evidences(session, template)
+            missing = run_evidences(session, template)
         finally:
             leave_sap(session, we_logged_in)
         LOGGER.info("Done.")
-        return
+        return template, missing
 
     if args.date_from or args.date_to:  # a date not given: from/to of the last completed quarter
         default_from, default_to = _last_completed_quarter()
@@ -1309,7 +1373,7 @@ def main():
     if date_from > date_to:
         raise RuntimeError("'from' is after 'to'.")
 
-    template = None if args.columns else _template(args)  # check it before the SAP work, not afterwards
+    master = None if args.columns else _template(args, find_template)  # check it before the SAP work, not afterwards
 
     session, we_logged_in = sap_connector.get_sap_session()
     try:
@@ -1337,23 +1401,32 @@ def main():
                 f"rows (numbers/formulas in B and C). Please shorten the period."
             )
 
-        ensure_not_open(template)  # someone could have opened it in the meantime
-        backup_template(template)
+        template = new_result_file(master, date_from, date_to)  # a new file - no backup needed
         process_template(template, rows)
         try:
-            run_evidences(session, template)
-        except Exception:
-            LOGGER.error("Process 1 is saved. After fixing the problem below, run again with "
-                         "--evidences-only - the samples stay the same.")
-            raise
+            missing = run_evidences(session, template)
+        except Exception as e:
+            raise RuntimeError(f"{e}\n\nThe population and the samples are saved. To take the pictures, "
+                               f"double-click '2 - Redo pictures only' - the samples stay the same.") from e
     finally:
         leave_sap(session, we_logged_in)
     LOGGER.info("Done.")
+    return template, missing
 
 
 if __name__ == "__main__":
     try:
-        main()
+        result = main()
     except Exception as exc:
         LOGGER.error(str(exc))
+        _tell("The tool stopped", f"{exc}\n\nAll details are in the log file:\n{LOG_FILE}\n\n"
+              f"If it is not clear what to do, send this message and the log file to Utsav.", error=True)
         sys.exit(1)
+    if result:  # not after --columns
+        template, missing = result
+        text = f"The file is ready:\n{template}"
+        if missing:
+            text += ("\n\nPictures missing: sample " + ", ".join(missing) + ".\nDouble-click "
+                     "'2 - Redo pictures only' to try again. If one stays missing, add it by hand.")
+        if _tell("Done", text + "\n\nOpen the file now?"):
+            os.startfile(template)
