@@ -8,13 +8,14 @@ population_request_tool.py (Process 1 only) is kept unchanged in _Archive\\.
 Process 1 - Population (same steps as population_request_tool.py):
   1. Ask for the period (posting date)
   2. Get an SAP session (via sap_connector.py)
-  3. Run FBL4N with the selections and read the ALV grid directly
-  4. Save the raw data as CSV (traceability for the audit)
+  3. Run FBL4N with the selections and read the ALV grid directly. Pictures on the way: the
+     Document Type and the G/L account selection (popup open) and the result list
+  4. Save the raw data as CSV and the pictures as PNG (traceability for the audit)
   5. Copy the master template to a new file in 'Excel results' - the master stays unchanged
   6. Clear Population (D28:X) of the copy and fill it with the SAP data. Buttons,
      macros and the other tabs are left untouched.
   7. Write the row count to "Main" C4, run the sample macro behind the button (C5)
-  8. Filter "Population" on "Sample Selected ?" = "Selected", save
+  8. Filter "Population" on "Sample Selected ?" = "Selected", the 3 pictures above the table, save
 
 Process 2 - Evidences, for every "Selected" sample:
   9. FB03 'Data Entry View' of the document, line items in layout /EVI -> picture
@@ -86,7 +87,7 @@ LOGGER = logging.getLogger("population_evidence_tool")
 # ---------------------------------------------------------------------------
 # CONFIGURATION
 # ---------------------------------------------------------------------------
-VERSION = "2026-10-26c"  # printed at the start, so the log shows which file ran
+VERSION = "2026-10-27b"  # printed at the start, so the log shows which file ran
 # No drive letter: the share is K: on one PC and something else on another (2026-10-26), so every
 # folder is found from the tool's own folder - this file lies in 'Program files - do not change'
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -139,6 +140,9 @@ MAIN_SHEET_NAME = "Main"
 MAIN_BUTTON_CELL = "C5"
 MAIN_COUNT_CELL = "C4"  # "Quantity of Population" - the macro draws the samples from rows 1..this number
 MAIN_BUTTON_MACRO = None  # optionally hard-code, e.g. "Modul1.SamplesZiehen"
+# Space for the FBL4N pictures above the table, first and last row - like the manual ones (steps in
+# rows 1-3, '② Copy and paste the population data' in row 24)
+POP_PICTURE_ROWS = (5, 22)
 SELECTED_VALUE = "Selected"
 MSO_OLE_CONTROL = 12  # shape type of an ActiveX button
 
@@ -400,9 +404,37 @@ def _wait_until_idle(session, timeout=300):
 # SAP: run FBL4N and read the grid (Process 1)
 # ---------------------------------------------------------------------------
 
-def _fill_multiselect(session, button_id, values, mode="include"):
+def _take_picture(session, png, popup=False):
+    """Picture of the main window - with popup=True with the open popup on it, where it is on the
+    screen (HardCopy shows one window only). Returns png, or None: a failure is only logged, the
+    population doesn't depend on it."""
+    try:
+        main = session.findById("wnd[0]")
+        main.HardCopy(png, 2)  # 2 = PNG
+        if popup:
+            window = session.findById("wnd[1]")
+            popup_png = os.path.splitext(png)[0] + "_popup.png"
+            window.HardCopy(popup_png, 2)
+            screen, box = (pymupdf.Pixmap(p) for p in (png, popup_png))
+            screen, box = (pymupdf.Pixmap(p, 0) if p.alpha else p for p in (screen, box))
+            # inside the picture also if the window frames lie off the screen (maximized)
+            box.set_origin(max(0, min(window.ScreenLeft - main.ScreenLeft, screen.width - box.width)),
+                           max(0, min(window.ScreenTop - main.ScreenTop, screen.height - box.height)))
+            screen.copy(box, box.irect)
+            screen.save(png)
+            os.remove(popup_png)
+        if not os.path.exists(png):  # not isfile() - see _capture_document
+            raise RuntimeError("SAP did not save the picture")
+        return png
+    except Exception as e:
+        LOGGER.warning(f"No picture {os.path.basename(png)} for '{SHEET_NAME}' - {e}")
+        return None
+
+
+def _fill_multiselect(session, button_id, values, mode="include", picture=None):
     """Fills the multiple selection dialog. mode='include' -> tab
-    'Select Single Values', mode='exclude' -> 'Exclude Single Values'."""
+    'Select Single Values', mode='exclude' -> 'Exclude Single Values'.
+    With picture: takes it of the filled dialog before closing it, returns _take_picture's result."""
     tab, subscreen, table_name, field = MULTI_TABS[mode]
     session.findById(button_id).press()
     session.findById(f"wnd[1]/usr/tabsTAB_STRIP/{tab}").select()
@@ -415,7 +447,9 @@ def _fill_multiselect(session, button_id, values, mode="include"):
         )
     for i, value in enumerate(values):
         session.findById(f"{table_id}/ctxt{field}[1,{i}]").text = value
+    taken = _take_picture(session, picture, popup=True) if picture else None
     session.findById("wnd[1]/tbar[0]/btn[8]").press()
+    return taken
 
 
 def _ensure_dynamic_selections(session):
@@ -428,30 +462,40 @@ def _ensure_dynamic_selections(session):
         session.findById(DYN009_BTN)  # raises if the field is still missing
 
 
-def run_fbl4n(session, date_from, date_to):
+def run_fbl4n(session, date_from, date_to, stem):
+    """Runs FBL4N and returns its grid and the pictures {name: <stem>_<n>_<name>.png, or None
+    if it failed} of the two selections and the result list, in the order the sheet shows them."""
     LOGGER.info(f"Starting FBL4N for company code {COMPANY_CODE}, posting date "
                 f"{date_from:%d.%m.%Y} - {date_to:%d.%m.%Y} ...")
     session.findById("wnd[0]").maximize()
     session.findById("wnd[0]/tbar[0]/okcd").text = "/nFBL4N"
     session.findById("wnd[0]").sendVKey(0)
 
-    _ensure_dynamic_selections(session)
-    _fill_multiselect(session, DYN009_BTN, DYN_FIELD_EXCLUDE, mode="exclude")
-    _fill_multiselect(session, GL_BTN, GL_ACCOUNTS, mode="include")
-
+    # before the selections, so their pictures show this period - not the one SAP remembers
     session.findById("wnd[0]/usr/radX_AISEL").select()
     session.findById("wnd[0]/usr/ctxtSD_BUKRS-LOW").text = COMPANY_CODE  # else SAP takes the one it remembers
     session.findById("wnd[0]/usr/ctxtSO_BUDAT-LOW").text = date_from.strftime(SAP_DATE_FORMAT)
     session.findById("wnd[0]/usr/ctxtSO_BUDAT-HIGH").text = date_to.strftime(SAP_DATE_FORMAT)
     session.findById("wnd[0]/usr/ctxtPA_VARI").text = SAP_LAYOUT
+
+    _ensure_dynamic_selections(session)
+    pictures = {
+        "Document Type selection": _fill_multiselect(session, DYN009_BTN, DYN_FIELD_EXCLUDE, mode="exclude",
+                                                     picture=f"{stem}_1_document_types.png"),
+        "G/L account selection": _fill_multiselect(session, GL_BTN, GL_ACCOUNTS, mode="include",
+                                                   picture=f"{stem}_2_gl_accounts.png"),
+    }
     session.findById("wnd[0]/tbar[1]/btn[8]").press()
     _wait_until_idle(session)
 
     try:
-        return session.findById(GRID_ID)
+        grid = session.findById(GRID_ID)
     except Exception:
         msg = session.findById("wnd[0]/sbar").Text
         raise RuntimeError(f"FBL4N returned no list. SAP message: {msg or '(none)'}")
+    # before read_grid scrolls - the top of the list, its status bar shows the item count
+    pictures["result list"] = _take_picture(session, f"{stem}_3_result.png")
+    return grid, pictures
 
 
 def read_grid(grid):
@@ -923,12 +967,7 @@ def build_excel_rows(raw_rows):
     return result
 
 
-def save_raw_export(columns, titles, rows, date_from, date_to):
-    target_dir = os.path.join(DATA_DIR, RAW_EXPORT_DIR_NAME)
-    os.makedirs(target_dir, exist_ok=True)
-    name = (f"FBL4N_{date_from:%Y%m%d}-{date_to:%Y%m%d}_"
-            f"{dt.datetime.now():%Y-%m-%d_%H%M%S}.csv")
-    target = os.path.join(target_dir, name)
+def save_raw_export(columns, titles, rows, target):
     with open(target, "w", newline="", encoding="utf-8-sig") as f:
         writer = csv.writer(f, delimiter=";")
         writer.writerow(columns)
@@ -1164,8 +1203,28 @@ def _copy_number_formats(ws, last_row):
         LOGGER.warning(f"Number formats could not be copied down in '{ws.Name}' ({e}) - dates may show a time.")
 
 
-def process_template(path, rows):
-    """Process 1 in Excel: fill Population, draw the samples, filter, save."""
+def fill_population_pictures(ws, pictures):
+    """The FBL4N pictures side by side in the space above the table (POP_PICTURE_ROWS), as tall as
+    it is - like the manual ones. Pictures already above the table (the master's) are removed."""
+    for i in range(ws.Shapes.Count, 0, -1):  # backwards, since we delete
+        shp = ws.Shapes(i)
+        if shp.Type in MSO_PICTURES and shp.TopLeftCell.Row < HEADER_ROW:
+            shp.Delete()
+    first, last = POP_PICTURE_ROWS
+    top = ws.Rows(first).Top + PICTURE_MARGIN
+    left = ws.Range("C1").Left + PICTURE_MARGIN
+    ws.Activate()  # pictures only on the active sheet - see fill_evidences
+    for png in pictures:
+        picture = ws.Shapes.AddPicture(png, False, True, left, top, -1, -1)  # embedded, not linked
+        picture.LockAspectRatio = True
+        picture.Height = ws.Rows(last + 1).Top - PICTURE_MARGIN - top
+        picture.Placement = XL_MOVE
+        left += picture.Width + 2 * PICTURE_MARGIN
+
+
+def process_template(path, rows, pictures):
+    """Process 1 in Excel: fill Population, draw the samples, filter, the FBL4N pictures
+    ({name: file or None}) above the table, save. Returns the names of the missing pictures."""
     with _open_template(path) as (excel, wb):
         ws = wb.Worksheets(SHEET_NAME)
         _check_headers(ws)
@@ -1193,10 +1252,18 @@ def process_template(path, rows):
         else:
             LOGGER.warning("After the macro no row is marked as 'Selected' - please check.")
 
-        # 3. Filter on Selected and save
+        # 3. Filter on Selected, pictures above the table, save
         filter_selected(ws, len(rows))
+        missing = [name for name, png in pictures.items() if not png]
+        try:
+            fill_population_pictures(ws, [png for png in pictures.values() if png])
+            LOGGER.info(f"{len(pictures) - len(missing)} FBL4N picture(s) put above the table in '{SHEET_NAME}'.")
+        except Exception as e:  # e.g. a protected sheet - the population and the samples are what counts
+            LOGGER.warning(f"The FBL4N pictures could not be put into '{SHEET_NAME}' ({e}) - please add them by hand.")
+            missing = list(pictures)
         wb.Save()
         LOGGER.info("Template saved.")
+    return missing
 
 
 # ---------------------------------------------------------------------------
@@ -1298,10 +1365,10 @@ def run_evidences(session, path):
         fill_evidences(pop, ev, samples, pictures)
         wb.Save()
     LOGGER.info(f"'{EVIDENCES_SHEET_NAME}' saved. Pictures and invoice files: {run_dir}")
-    missing = [f"{s.number} ({kind})" for s, files in zip(samples, pictures)
+    missing = [f"sample {s.number} ({kind})" for s, files in zip(samples, pictures)
                for kind in EVIDENCE_SLOTS if kind not in files]
     if missing:
-        LOGGER.warning("Pictures missing - please add them manually: sample " + ", ".join(missing))
+        LOGGER.warning("Pictures missing - please add them manually: " + ", ".join(missing))
     return missing
 
 
@@ -1375,7 +1442,11 @@ def main():
 
     session, we_logged_in = sap_connector.get_sap_session()
     try:
-        grid = run_fbl4n(session, date_from, date_to)
+        # raw data and FBL4N pictures of this run: <stem>.csv, <stem>_<n>_<name>.png
+        stem = os.path.join(DATA_DIR, RAW_EXPORT_DIR_NAME,
+                            f"FBL4N_{date_from:%Y%m%d}-{date_to:%Y%m%d}_{dt.datetime.now():%Y-%m-%d_%H%M%S}")
+        os.makedirs(os.path.dirname(stem), exist_ok=True)
+        grid, pictures = run_fbl4n(session, date_from, date_to, stem)
         columns, titles, raw_rows = read_grid(grid)
         _log_column_mapping(columns, titles)
         if args.columns:
@@ -1388,7 +1459,7 @@ def main():
             )
 
         if SAVE_RAW_EXPORT:
-            save_raw_export(columns, titles, raw_rows, date_from, date_to)
+            save_raw_export(columns, titles, raw_rows, stem + ".csv")
 
         rows = build_excel_rows(raw_rows)
         if not rows:
@@ -1400,9 +1471,9 @@ def main():
             )
 
         template = new_result_file(master, date_from, date_to)  # a new file - no backup needed
-        process_template(template, rows)
+        missing = [f"Population ({name})" for name in process_template(template, rows, pictures)]
         try:
-            missing = run_evidences(session, template)
+            missing += run_evidences(session, template)
         except Exception as e:
             raise RuntimeError(f"{e}\n\nThe population and the samples are saved. To take the pictures, "
                                f"double-click '2 - Redo pictures only' - the samples stay the same.") from e
@@ -1416,7 +1487,7 @@ if __name__ == "__main__":
     try:
         result = main()
     except Exception as exc:
-        LOGGER.error(str(exc))
+        LOGGER.exception(str(exc))  # with the traceback: 'WinError 5' alone didn't say which step (2026-10-27)
         _tell("The tool stopped", f"{exc}\n\nAll details are in the log file:\n{LOG_FILE}\n\n"
               f"If it is not clear what to do, send this message and the log file to Utsav.", error=True)
         sys.exit(1)
@@ -1424,7 +1495,7 @@ if __name__ == "__main__":
         template, missing = result
         text = f"The file is ready:\n{template}"
         if missing:
-            text += ("\n\nPictures missing: sample " + ", ".join(missing) + ".\nDouble-click "
-                     "'2 - Redo pictures only' to try again. If one stays missing, add it by hand.")
+            text += ("\n\nPictures missing: " + ", ".join(missing) + ".\nFor a sample, double-click '2 - Redo "
+                     "pictures only' to try again. If one stays missing - or a Population one is - add it by hand.")
         if _tell("Done", text + "\n\nOpen the file now?"):
             os.startfile(template)
