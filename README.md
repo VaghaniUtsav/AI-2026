@@ -87,7 +87,7 @@ LOGGER = logging.getLogger("population_evidence_tool")
 # ---------------------------------------------------------------------------
 # CONFIGURATION
 # ---------------------------------------------------------------------------
-VERSION = "2026-10-27b"  # printed at the start, so the log shows which file ran
+VERSION = "2026-10-27d"  # printed at the start, so the log shows which file ran
 # No drive letter: the share is K: on one PC and something else on another (2026-10-26), so every
 # folder is found from the tool's own folder - this file lies in 'Program files - do not change'
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -151,7 +151,11 @@ AMOUNT_HEADERS = {"Amount in Local Currency"}
 KEY_HEADER = "Document Number"  # rows without a document number = total rows -> ignore
 
 # SAP selections (from the VBS recording)
-SAP_DATE_FORMAT = "%d.%m.%Y"  # must match the SAP user profile (SU3 > Defaults > Date Format), e.g. 01.01.2026
+# SAP's date formats (SU3 > Defaults > Date Format) - no two share separator and order, so one date
+# SAP shows says which one the user has. Nobody has to change that setting any more (2026-10-27)
+SAP_DATE_FORMATS = ("%d.%m.%Y", "%m/%d/%Y", "%m-%d-%Y", "%Y.%m.%d", "%Y/%m/%d", "%Y-%m-%d")
+SAP_DATE_FORMAT = SAP_DATE_FORMATS[0]  # for typing dates into SAP - _use_sap_date_format takes the user's
+KEY_DATE_FIELD = "wnd[0]/usr/ctxtPA_STIDA"  # FBL4N 'Open at key date' - SAP fills in a date (today)
 SAP_LAYOUT = "/POPU"
 DYN_FIELD_EXCLUDE = ["BA", "BK"]  # Product Group (dynamic selection DYN009): EXCLUDED
 GL_ACCOUNTS = [
@@ -343,10 +347,23 @@ def _ask_period(today=None):
     return tuple(period)
 
 
+def _read_sap_date(text):
+    """(date, format) of a date in any of SAP_DATE_FORMATS - (None, None) if it is none."""
+    for fmt in SAP_DATE_FORMATS:
+        try:
+            return dt.datetime.strptime(text.strip(), fmt).date(), fmt
+        except ValueError:
+            pass
+    return None, None
+
+
 def _parse_sap_date(text):
     if not text:
         return None
-    return dt.datetime.strptime(text, SAP_DATE_FORMAT).date()
+    d = _read_sap_date(text)[0]
+    if not d:
+        raise ValueError(f"'{text}' is no date")
+    return d
 
 
 def _parse_amount(text):
@@ -381,15 +398,11 @@ def _text(value):
 
 
 def _year_of(value):
-    """Year of a posting date - an Excel date, or text in SAP or German format."""
+    """Year of a posting date - an Excel date, or text in a SAP format (German included)."""
     if hasattr(value, "year"):
         return value.year
-    for fmt in (SAP_DATE_FORMAT, "%d.%m.%Y"):
-        try:
-            return dt.datetime.strptime(str(value).strip(), fmt).year
-        except ValueError:
-            pass
-    return None
+    d = _read_sap_date(str(value))[0]
+    return d.year if d else None
 
 
 def _wait_until_idle(session, timeout=300):
@@ -462,14 +475,41 @@ def _ensure_dynamic_selections(session):
         session.findById(DYN009_BTN)  # raises if the field is still missing
 
 
+def _open_fbl4n(session):
+    session.findById("wnd[0]/tbar[0]/okcd").text = "/nFBL4N"
+    session.findById("wnd[0]").sendVKey(0)
+    try:
+        session.findById("wnd[0]/usr/radX_AISEL")
+    except Exception:  # c.liptay, 2026-10-27: FBL4N's screen wasn't there - SAP's own words say why
+        msg = session.findById("wnd[0]/sbar").Text
+        raise RuntimeError(f"SAP did not open FBL4N. SAP shows the window '{session.ActiveWindow.Text}', "
+                           f"message: {msg or '(none)'}. If SAP says you are not authorized, please ask the "
+                           f"SAP team for FBL4N. Otherwise send this message to Utsav.") from None
+
+
+def _use_sap_date_format(session):
+    """Types dates into SAP the way this user's SAP writes them, read from a date SAP fills in itself."""
+    global SAP_DATE_FORMAT
+    _open_fbl4n(session)
+    try:
+        text = session.findById(KEY_DATE_FIELD).text
+    except Exception:
+        text = ""
+    fmt = _read_sap_date(text)[1]
+    if fmt:
+        SAP_DATE_FORMAT = fmt
+        LOGGER.info(f"SAP writes dates like '{text}' - the tool types them the same way.")
+    else:  # the format the tool always used
+        LOGGER.warning(f"SAP's date format not found (key date: '{text}') - dates typed like 31.12.2026.")
+
+
 def run_fbl4n(session, date_from, date_to, stem):
     """Runs FBL4N and returns its grid and the pictures {name: <stem>_<n>_<name>.png, or None
     if it failed} of the two selections and the result list, in the order the sheet shows them."""
     LOGGER.info(f"Starting FBL4N for company code {COMPANY_CODE}, posting date "
                 f"{date_from:%d.%m.%Y} - {date_to:%d.%m.%Y} ...")
     session.findById("wnd[0]").maximize()
-    session.findById("wnd[0]/tbar[0]/okcd").text = "/nFBL4N"
-    session.findById("wnd[0]").sendVKey(0)
+    _open_fbl4n(session)
 
     # before the selections, so their pictures show this period - not the one SAP remembers
     session.findById("wnd[0]/usr/radX_AISEL").select()
@@ -1423,6 +1463,7 @@ def main():
         backup_template(template)
         session, we_logged_in = sap_connector.get_sap_session()
         try:
+            _use_sap_date_format(session)
             missing = run_evidences(session, template)
         finally:
             leave_sap(session, we_logged_in)
@@ -1442,6 +1483,7 @@ def main():
 
     session, we_logged_in = sap_connector.get_sap_session()
     try:
+        _use_sap_date_format(session)
         # raw data and FBL4N pictures of this run: <stem>.csv, <stem>_<n>_<name>.png
         stem = os.path.join(DATA_DIR, RAW_EXPORT_DIR_NAME,
                             f"FBL4N_{date_from:%Y%m%d}-{date_to:%Y%m%d}_{dt.datetime.now():%Y-%m-%d_%H%M%S}")
