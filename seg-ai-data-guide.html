@@ -1,0 +1,1071 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SEG AI Data Guide</title>
+<script>
+// Theme and language are set before the page is drawn, so a stored choice never flashes the other theme
+// and the switches' knobs don't slide on load.
+(() => {
+  const root = document.documentElement;
+  let t, l;
+  try { t = localStorage.getItem("seg-ai-data-guide.theme"); l = localStorage.getItem("seg-ai-data-guide.lang"); } catch (e) {}  // storage can be blocked
+  root.dataset.theme = t === "dark" || t === "light" ? t : matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  if (l === "en") root.lang = "en";
+})();
+</script>
+<style>
+:root {
+  color-scheme: light;
+  --bg: #ffffff; --soft: #f4f6f9; --ink: #0f172a; --muted: #5b6576; --line: #e5e7eb; --edge: #7d8799;
+  --blue: #2563eb; --blue-soft: #eff5ff;
+  --ok: #15803d; --ok-bg: #ecfdf3; --ok-ink: #14532d;
+  --cond: #b45309; --cond-bg: #fff7e8; --cond-ink: #7c2d12;
+  --int: #1d4ed8; --int-bg: #eef2ff; --int-ink: #1e3a8a;
+  --no: #b91c1c; --no-bg: #fef1f1; --no-ink: #7f1d1d;
+  --clar: #475569; --clar-bg: #f1f5f9; --clar-ink: #1e293b;
+  --gutter: 16px;
+}
+/* The script in <head> sets data-theme from the stored choice, else from the device; dark is for the screen only. */
+@media screen {
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --bg: #0f141b; --soft: #18202b; --ink: #e8edf4; --muted: #9ba6b7; --line: #283242; --edge: #76829a;
+    --blue: #7aaaff; --blue-soft: #152440;
+    --ok: #6fd49a; --ok-bg: #11281b; --ok-ink: #a7f0c4;
+    --cond: #f0b85a; --cond-bg: #2d2310; --cond-ink: #fbd99a;
+    --int: #8fb8f5; --int-bg: #16233d; --int-ink: #c3d8fb;
+    --no: #f28b82; --no-bg: #341716; --no-ink: #fbc4be;
+    --clar: #a7b3c4; --clar-bg: #1b2330; --clar-ink: #dbe3ee;
+  }
+}
+@media (min-width: 640px) { :root { --gutter: 24px; } }
+/* Each answer brings its own colour; components only read --c (accent), --c-bg (tint) and --c-ink (text on the tint). */
+.v-not_permitted { --c: var(--no); --c-bg: var(--no-bg); --c-ink: var(--no-ink); }
+.v-internal_ai_only { --c: var(--int); --c-bg: var(--int-bg); --c-ink: var(--int-ink); }
+.v-permitted_with_conditions { --c: var(--cond); --c-bg: var(--cond-bg); --c-ink: var(--cond-ink); }
+.v-permitted { --c: var(--ok); --c-bg: var(--ok-bg); --c-ink: var(--ok-ink); }
+.v-clarify_first { --c: var(--clar); --c-bg: var(--clar-bg); --c-ink: var(--clar-ink); }
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html { scroll-padding-bottom: 96px; }  /* keeps focused controls clear of the sticky action bar */
+body { margin: 0; background: var(--bg); color: var(--ink); -webkit-text-size-adjust: 100%;
+  font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
+.wrap { max-width: calc(600px + 2 * var(--gutter)); margin: 0 auto; padding: 0 var(--gutter) 24px; }
+a { color: var(--blue); text-underline-offset: 2px; }
+:focus-visible { outline: 3px solid var(--blue); outline-offset: 2px; border-radius: 4px; }
+h1, h2, h3, h4, p { margin: 0; }
+h1, h2 { letter-spacing: -.015em; }
+fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
+legend { padding: 0; }
+ul, ol { margin: 0; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.pending { color: var(--muted); font-style: italic; }
+/* Header */
+header.top { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 64px; }
+.brand { display: flex; align-items: center; gap: 10px; min-width: 0; font-size: 15px; font-weight: 500; color: var(--muted); text-decoration: none; }
+.brand b { color: var(--ink); font-weight: 700; }
+.logo-slot:empty { display: none; }
+.logo-slot img { display: block; max-height: 28px; max-width: 120px; }
+.tools, .lang { display: flex; align-items: center; }
+.tools { gap: 4px; }
+/* Language switch, drawn like the light/dark switch: a track (::before) and a knob (::after) that slides under the
+   chosen language. The buttons stay 44px tall and sit above both. */
+.lang { position: relative; flex: none; }
+.lang::before { content: ""; position: absolute; inset: 7px 0; border: 1.5px solid var(--edge); border-radius: 999px; background: var(--soft); }
+.lang::after { content: ""; position: absolute; top: 10px; left: 3px; width: 38px; height: 24px; border-radius: 999px;
+  background: var(--ink); transition: transform .3s cubic-bezier(.4, 0, .2, 1); }
+html[lang="en"] .lang::after { transform: translateX(44px); }
+.textbtn { position: relative; z-index: 1; font: inherit; font-size: 13px; font-weight: 700; width: 44px; min-height: 44px; padding: 0;
+  border: 0; border-radius: 999px; background: none; color: var(--muted); cursor: pointer; transition: color .3s; }
+.textbtn:hover { color: var(--ink); }
+.textbtn[aria-pressed="true"] { color: var(--bg); }
+/* Light/dark switch: the knob slides and the sun turns into the moon. */
+.theme { flex: none; display: grid; place-items: center; min-width: 60px; min-height: 44px; padding: 0; border: 0;
+  border-radius: 999px; background: none; cursor: pointer; }
+.theme .track { position: relative; width: 52px; height: 30px; border: 1.5px solid var(--edge); border-radius: 999px; background: var(--soft); }
+.theme .knob { position: absolute; top: 2.5px; left: 2.5px; display: grid; place-items: center; width: 22px; height: 22px;
+  border-radius: 50%; background: var(--ink); color: var(--bg); transition: transform .3s cubic-bezier(.4, 0, .2, 1); }
+.theme svg { position: absolute; width: 14px; height: 14px; transition: opacity .3s, transform .3s; }
+.theme .moon, [aria-checked="true"] .sun { opacity: 0; transform: rotate(-90deg) scale(.5); }
+[aria-checked="true"] > .track .knob { transform: translateX(22px); }
+[aria-checked="true"] .moon { opacity: 1; transform: none; }
+/* Colours fade only while the theme switches, so hovers and ticks stay instant. */
+@media (prefers-reduced-motion: no-preference) {
+  .theming, .theming *, .theming *::before, .theming *::after {
+    transition: background-color .35s, color .35s, border-color .35s, box-shadow .35s, outline-color .35s !important;
+  }
+  .theming .knob { transition: transform .3s cubic-bezier(.4, 0, .2, 1), background-color .35s, color .35s !important; }
+  .theming .theme svg { transition: opacity .3s, transform .3s !important; }
+}
+
+/* Shared pieces */
+.btn { font: inherit; font-size: 16px; font-weight: 650; display: inline-flex; align-items: center; justify-content: center;
+  min-height: 48px; padding: 12px 22px; border: 0; border-radius: 999px; background: var(--ink); color: var(--bg);
+  text-align: center; cursor: pointer; }
+.btn.ghost { background: transparent; color: var(--ink); box-shadow: inset 0 0 0 1.5px var(--line); }
+.btn.ghost:hover { background: var(--soft); }
+.btn:disabled { opacity: .35; cursor: not-allowed; }
+.lead { color: var(--muted); }
+.quote { padding: 14px 16px; border-radius: 16px; background: var(--soft); font-size: 15px; }
+.tag { flex: none; display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 650; line-height: 1.4;
+  white-space: nowrap; color: var(--c); }
+.tag::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+.steps { list-style: none; padding: 0; counter-reset: s; display: grid; gap: 10px; }
+.steps > li { counter-increment: s; display: flex; gap: 12px; }
+.steps > li::before { content: counter(s); flex: none; display: grid; place-items: center; width: 24px; height: 24px;
+  border-radius: 50%; background: var(--ink); color: var(--bg); font-size: 13px; font-weight: 700; }
+
+/* Data check */
+.screen { display: flex; flex-direction: column; gap: 16px; padding-top: 8px; }
+.enter { animation: enter .22s ease-out; }
+@keyframes enter { from { opacity: 0; transform: translateY(8px); } }
+.check h1 { font-size: 24px; line-height: 1.22; font-weight: 750; }
+.check[data-step="start"] h1 { font-size: 32px; line-height: 1.12; margin-top: 8px; }
+.kicker { margin-top: -6px; font-size: 13px; font-weight: 600; color: var(--muted); }
+.progress { display: flex; gap: 6px; }
+.progress i { flex: 1; height: 4px; border-radius: 2px; background: var(--line); }
+.progress i.on { background: var(--ink); }
+.note { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); }
+.note svg { flex: none; width: 16px; height: 16px; }
+
+.tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 12px; }
+@media (min-width: 560px) { .tiles { grid-template-columns: repeat(3, 1fr); } }
+.tile { position: relative; display: grid; align-content: start; gap: 6px; padding: 14px 12px; border-radius: 16px;
+  box-shadow: inset 0 0 0 1.5px var(--line); cursor: pointer; }
+.tile:hover { background: var(--soft); }
+.tile input { position: absolute; inset: 0; z-index: 2; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
+.tile .ic { width: 22px; height: 22px; }
+.tile b { font-size: 14.5px; line-height: 1.25; overflow-wrap: break-word; }
+.tile small { font-size: 12.5px; line-height: 1.35; color: var(--muted); }
+.tile .tick { position: absolute; top: 10px; right: 10px; display: none; place-items: center; width: 22px; height: 22px;
+  border-radius: 50%; background: var(--blue); color: var(--bg); }
+.tile .tick svg { width: 13px; height: 13px; }
+.tile:has(input:checked) { background: var(--blue-soft); box-shadow: inset 0 0 0 2px var(--blue); }
+.tile:has(input:checked) .tick { display: grid; }
+.tile:has(input:focus-visible) { outline: 3px solid var(--blue); outline-offset: 2px; }
+
+.search { font: inherit; width: 100%; min-height: 48px; padding: 10px 14px; border: 1.5px solid var(--edge); border-radius: 12px;
+  background: var(--bg); color: var(--ink); }
+.group > legend { margin-top: 8px; font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.row { display: flex; align-items: flex-start; gap: 12px; min-height: 48px; padding: 12px 0; border-bottom: 1px solid var(--line); cursor: pointer; }
+.row .t { flex: 1; min-width: 0; font-size: 15px; line-height: 1.4; overflow-wrap: break-word; }
+.cb { appearance: none; flex: none; display: grid; place-items: center; width: 22px; height: 22px; margin: 0;
+  border: 1.5px solid var(--edge); border-radius: 7px; background: var(--bg); cursor: pointer; }
+.cb::after { content: ""; display: none; width: 6px; height: 11px; border: solid var(--bg); border-width: 0 2.5px 2.5px 0;
+  transform: translateY(-1px) rotate(45deg); }
+.cb:checked { border-color: var(--blue); background: var(--blue); }
+.cb:checked::after { display: block; }
+.empty-note { font-size: 15px; color: var(--muted); }
+
+.ccard { display: grid; gap: 12px; padding: 16px; border-radius: 16px; box-shadow: inset 0 0 0 1.5px var(--line); }
+.ccard > legend { float: left; width: 100%; font-weight: 650; }  /* a floated legend sits inside the card's padding */
+.ccard p { font-size: 15px; }
+.seg { display: grid; grid-template-columns: repeat(3, 1fr); overflow: hidden; border-radius: 12px; box-shadow: inset 0 0 0 1.5px var(--line); }
+.seg label { position: relative; display: grid; place-items: center; min-height: 44px; padding: 8px 4px;
+  font-size: 14.5px; font-weight: 650; text-align: center; cursor: pointer; }
+.seg label + label { box-shadow: inset 1.5px 0 0 var(--line); }
+.seg input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
+.seg label:has(input:checked) { background: var(--ink); color: var(--bg); }
+.seg label:has(input:focus-visible) { outline: 3px solid var(--blue); outline-offset: -3px; }
+
+.hero { display: grid; gap: 10px; padding: 20px; border-radius: 22px; background: var(--c-bg); }
+.ring { display: grid; place-items: center; width: 48px; height: 48px; border-radius: 50%; background: var(--c); color: var(--bg); }
+.ring svg { width: 26px; height: 26px; }
+.check .hero h1 { font-size: 27px; line-height: 1.15; font-weight: 800; color: var(--c-ink); }
+.hero p { font-size: 15px; }
+.why { font-size: 15px; }
+.todo { display: grid; gap: 10px; font-size: 15px; }
+.todo h2 { font-size: 16px; font-weight: 700; letter-spacing: 0; }
+.must { list-style: none; padding: 0; display: grid; gap: 10px; }
+.must li { display: flex; gap: 10px; }
+.must svg { flex: none; width: 20px; height: 20px; margin-top: 1px; color: var(--cond); }
+.more { border-top: 1px solid var(--line); }
+.more:last-child { border-bottom: 1px solid var(--line); }
+.more > summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 52px; padding: 12px 0;
+  font-size: 15px; font-weight: 600; list-style: none; cursor: pointer; }
+.more > summary::-webkit-details-marker { display: none; }
+.more > summary::after { content: "›"; color: var(--muted); font-size: 22px; line-height: 1; transition: transform .2s; }
+.more[open] > summary::after { transform: rotate(90deg); }
+.more > div { display: grid; gap: 10px; padding: 0 0 16px; font-size: 15px; }
+.more h3 { font-size: 13px; font-weight: 700; color: var(--muted); }
+.plain { list-style: none; padding: 0; display: grid; gap: 10px; }
+.plain li { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 2px 12px; }
+.plain .sub { flex-basis: 100%; color: var(--muted); font-size: 14px; }
+.answers { margin: 0; }
+.answers dt { font-weight: 600; }
+.answers dd { margin: 0 0 6px; }
+
+.actions { position: sticky; bottom: 0; z-index: 5; display: flex; gap: 10px; margin-top: 28px;
+  padding: 12px 0 calc(12px + env(safe-area-inset-bottom)); border-top: 1px solid var(--line); background: var(--bg); }
+.actions .btn { flex: 1; }
+.actions .btn.ghost { flex: 0 0 auto; }
+
+footer.foot { display: grid; gap: 4px; margin-top: 48px; padding-top: 16px; border-top: 1px solid var(--line);
+  color: var(--muted); font-size: 13.5px; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, ::before, ::after { animation: none !important; transition: none !important; }
+}
+/* Windows high contrast drops backgrounds and shadows, so selection needs an outline there. */
+@media (forced-colors: active) {
+  .cb { appearance: auto; }
+  .tile:has(input:checked), .seg label:has(input:checked) { outline: 3px solid Highlight; outline-offset: -3px; }
+}
+
+/* Print: the data check as it stands, with its details open, without controls.
+   The dark theme is for the screen only, so print uses the light palette on white. */
+@media print {
+  :root { color-scheme: light; }
+  body { font-size: 10.5pt; }
+  .wrap { max-width: none; padding: 0; }
+  .tools, .actions, .search, .empty-note, .check .btn { display: none !important; }
+  .ccard, .hero, .tile { break-inside: avoid; }
+  .hero, .ring, .tag, .tile, .seg label, .cb, .progress i { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <a class="brand" id="home" href=""><span class="logo-slot" id="logo"></span><span id="title"></span></a>
+    <div class="tools">
+      <button type="button" class="theme" id="theme" role="switch" aria-checked="false"><span class="track"><span class="knob">
+        <svg class="sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+        <svg class="moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/></svg>
+      </span></span></button>
+      <div class="lang" role="group" id="lang-group">
+        <button type="button" class="textbtn" data-lang="de" lang="de">DE</button>
+        <button type="button" class="textbtn" data-lang="en" lang="en">EN</button>
+      </div>
+    </div>
+  </header>
+  <main>
+    <section class="check" id="check"></section>
+  </main>
+  <footer class="foot"><p id="footer"></p><p id="meta"></p></footer>
+</div>
+
+<!-- ===== GUIDE DATA: everything that changes lives in this block. After editing, run: python -I check_guide.py ===== -->
+<script type="application/json" id="guide-data">
+{
+  "meta": { "version": "3", "asOf": "2026-10-29" },
+  "links": {
+    "axSupport": { "url": "https://segjira.eu.corp.samsungelectronics.net/plugins/servlet/desk/portal/2/create/98", "label": { "de": "AX Support im IT-VOC-Portal", "en": "AX Support in the IT-VOC portal" } },
+    "internalAi": { "url": "https://genai.sec.samsung.net/portal/chat", "label": { "de": "Knox Copilot / Samsung Gauss", "en": "Knox Copilot / Samsung Gauss" } },
+    "aiPolicy": { "url": "https://confluence-eu.sec.samsung.net/spaces/SEGAX/pages/1023761281/Confidential+Data+Usage", "label": { "de": "KI-Richtlinie der SEG", "en": "SEG AI policy" } },
+    "prepGuide": { "url": "https://confluence-eu.sec.samsung.net/spaces/SEGAX/pages/1023761281/Confidential+Data+Usage", "label": { "de": "Data Preparation Guide (PDF auf Confluence)", "en": "Data Preparation Guide (PDF on Confluence)" } },
+    "logo": { "url": "" }
+  },
+  "ui": {
+    "de": {
+      "title": "SEG AI Data Guide",
+      "language": "Sprache",
+      "darkMode": "Dunkles Design",
+      "version": "Version",
+      "asOf": "Stand",
+      "checkHeading": "Datencheck",
+      "startQuestion": "Darf das in ChatGPT & Co.?",
+      "checkIntro": "Drei kurze Fragen, und du weißt, ob deine Daten in ein externes KI-Tool dürfen und wie du vorgehst.",
+      "startCheck": "Prüfung starten",
+      "privacyNote": "Deine Antworten bleiben auf deinem Gerät und werden nicht gespeichert.",
+      "questionOf": "Frage {n} von {total}",
+      "clustersQuestion": "Welche Art von Daten steckt in deiner Eingabe?",
+      "tickAll": "Wähle alles, was zutrifft.",
+      "other": "Etwas anderes / weiß nicht",
+      "pointsQuestion": "Was genau willst du eingeben?",
+      "pointsSearchLabel": "Datenpunkte durchsuchen",
+      "pointsSearch": "Suchen, z. B. „Seriennummer“",
+      "pointsEmpty": "Nichts gefunden. Ist deine Art von Daten nicht dabei, wähle „Meine Daten sind hier nicht aufgeführt“.",
+      "unlisted": "Meine Daten sind hier nicht aufgeführt",
+      "selected": "{n} gewählt",
+      "conditionsQuestion": "Kannst du das einhalten?",
+      "conditionsIntro": "Für diese Daten gilt jeweils eine Bedingung.",
+      "yes": "Ja",
+      "no": "Nein",
+      "unsure": "Unsicher",
+      "continue": "Weiter",
+      "showResult": "Ergebnis zeigen",
+      "back": "Zurück",
+      "decidingHeading": "Der Grund",
+      "whyContains": "Deine Eingabe enthält {items}.",
+      "whyCannot": "Du kannst die Bedingung für {items} nicht einhalten.",
+      "whyUnsure": "Bei {items} bist du nicht sicher, ob du die Bedingung einhältst.",
+      "whyChose": "Du hast {items} gewählt.",
+      "mustHeading": "Das musst du einhalten",
+      "insteadHeading": "So geht es trotzdem",
+      "whatToDo": "So gehst du vor",
+      "checkAgain": "Prüfe die übrigen Daten erneut.",
+      "askSupport": "Unsicher? Frag nach:",
+      "yourChoices": "Deine Angaben",
+      "nPoints": "{n} Datenpunkte",
+      "onePoint": "1 Datenpunkt",
+      "tickedHeading": "Deine Datenpunkte, die strengsten zuerst",
+      "answersHeading": "Deine Antworten",
+      "rulesForThese": "Regeln zu diesen Daten",
+      "prepareHeading": "Daten richtig vorbereiten",
+      "prepare": "Wie du Daten anonymisierst und vorbereitest, zeigt dir der {link}.",
+      "changeLast": "Ändern",
+      "restart": "Neue Prüfung",
+      "internalOnly": "Nicht in externe KI-Tools. Erlaubt in den internen KI-Tools:",
+      "linkPending": "Link folgt",
+      "goldenRuleLabel": "Goldene Regel",
+      "goldenRule": "Gib nur so viel Info, wie die Aufgabe braucht – und behalte den Schlüssel bei dir.",
+      "footer": "Dieser Guide gilt zusammen mit der {link}."
+    },
+    "en": {
+      "title": "SEG AI Data Guide",
+      "language": "Language",
+      "darkMode": "Dark mode",
+      "version": "Version",
+      "asOf": "as of",
+      "checkHeading": "Data check",
+      "startQuestion": "Can this go into ChatGPT & co.?",
+      "checkIntro": "Three short questions, and you'll know whether your data may go into an external AI tool and what to do.",
+      "startCheck": "Start the check",
+      "privacyNote": "Your answers stay on your device and are not stored.",
+      "questionOf": "Question {n} of {total}",
+      "clustersQuestion": "What kind of data is in your input?",
+      "tickAll": "Choose everything that applies.",
+      "other": "Something else / not sure",
+      "pointsQuestion": "What exactly do you want to enter?",
+      "pointsSearchLabel": "Search the data points",
+      "pointsSearch": "Search, e.g. “serial number”",
+      "pointsEmpty": "Nothing found. If your kind of data isn't here, choose “My data isn't listed here”.",
+      "unlisted": "My data isn't listed here",
+      "selected": "{n} selected",
+      "conditionsQuestion": "Can you meet these conditions?",
+      "conditionsIntro": "Each of these data points comes with a condition.",
+      "yes": "Yes",
+      "no": "No",
+      "unsure": "Not sure",
+      "continue": "Continue",
+      "showResult": "Show result",
+      "back": "Back",
+      "decidingHeading": "The reason",
+      "whyContains": "Your input contains {items}.",
+      "whyCannot": "You can't meet the condition for {items}.",
+      "whyUnsure": "You're not sure whether you can meet the condition for {items}.",
+      "whyChose": "You chose {items}.",
+      "mustHeading": "What you must follow",
+      "insteadHeading": "What you can do instead",
+      "whatToDo": "What to do",
+      "checkAgain": "Check the remaining data again.",
+      "askSupport": "Not sure? Ask:",
+      "yourChoices": "Your choices",
+      "nPoints": "{n} data points",
+      "onePoint": "1 data point",
+      "tickedHeading": "Your data points, strictest first",
+      "answersHeading": "Your answers",
+      "rulesForThese": "Rules for this data",
+      "prepareHeading": "Preparing your data",
+      "prepare": "The {link} shows you how to anonymise and prepare your data.",
+      "changeLast": "Change",
+      "restart": "New check",
+      "internalOnly": "Not in external AI tools. Permitted in the internal AI tools:",
+      "linkPending": "link pending",
+      "goldenRuleLabel": "Golden rule",
+      "goldenRule": "Give only as much information as the task needs, and keep the key to yourself.",
+      "footer": "This guide applies together with the {link}."
+    }
+  },
+  "outcomes": {
+    "not_permitted": {
+      "heading": { "de": "Nein – nicht in externe KI-Tools", "en": "No – not in external AI tools" },
+      "reason": { "de": "Auch nicht auszugsweise oder umformuliert.", "en": "Not even as excerpts or paraphrased." },
+      "whatToDo": { "de": "Entferne diese Daten aus deiner Eingabe.", "en": "Remove this data from your input." } },
+    "clarify_first": {
+      "heading": { "de": "Erst klären", "en": "Clarify first" },
+      "reason": { "de": "Gib die Daten noch nicht in ein externes KI-Tool ein.", "en": "Don't put the data into an external AI tool yet." },
+      "whatToDo": { "de": "Frag zuerst nach:", "en": "Ask first:" } },
+    "internal_ai_only": {
+      "heading": { "de": "Nur in Knox Copilot oder Samsung Gauss", "en": "Only in Knox Copilot or Samsung Gauss" },
+      "reason": { "de": "Nicht in externe KI-Tools wie ChatGPT, aber in die internen KI-Tools von Samsung.", "en": "Not in external AI tools such as ChatGPT, but in Samsung's internal AI tools." },
+      "whatToDo": { "de": "Nutze für diese Aufgabe die internen KI-Tools:", "en": "Use the internal AI tools for this task:" } },
+    "permitted_with_conditions": {
+      "heading": { "de": "Ja – wenn du das beachtest", "en": "Yes – if you follow these conditions" },
+      "reason": { "de": "Du darfst diese Daten in externe KI-Tools eingeben, solange du jede Bedingung einhältst.", "en": "You may put this data into external AI tools as long as you meet every condition." },
+      "whatToDo": { "de": "Gib außerdem nur ein, was die Aufgabe wirklich braucht.", "en": "And enter only what the task really needs." } },
+    "permitted": {
+      "heading": { "de": "Ja – das darfst du", "en": "Yes – you may" },
+      "reason": { "de": "Alle Daten in deiner Eingabe dürfen in externe KI-Tools.", "en": "All the data in your input may go into external AI tools." },
+      "whatToDo": { "de": "Gib trotzdem nur ein, was die Aufgabe wirklich braucht.", "en": "Still enter only what the task really needs." } }
+  },
+  "verdicts": [
+    { "key": "not_permitted", "rank": 1,
+      "label": { "de": "Nicht erlaubt", "en": "Not permitted" },
+      "short": { "de": "Nein", "en": "No" },
+      "meaning": { "de": "Darf nicht in externe KI-Tools – auch nicht auszugsweise oder umformuliert.", "en": "Must not go into external AI tools, not even as excerpts or paraphrased." } },
+    { "key": "internal_ai_only", "rank": 2,
+      "label": { "de": "Nur interne KI", "en": "Internal AI only" },
+      "short": { "de": "Nur intern", "en": "Internal only" },
+      "meaning": { "de": "Nicht in externe KI-Tools; nur in den internen KI-Tools Knox Copilot oder Samsung Gauss.", "en": "Not in external AI tools; only in the internal AI tools Knox Copilot or Samsung Gauss." } },
+    { "key": "permitted_with_conditions", "rank": 3,
+      "label": { "de": "Erlaubt mit Bedingungen", "en": "Permitted with conditions" },
+      "short": { "de": "Mit Bedingung", "en": "With conditions" },
+      "meaning": { "de": "Erlaubt, aber nur wenn die genannte Bedingung erfüllt ist.", "en": "Permitted, but only when the stated condition is met." } },
+    { "key": "permitted", "rank": 4,
+      "label": { "de": "Erlaubt", "en": "Permitted" },
+      "short": { "de": "Erlaubt", "en": "Permitted" },
+      "meaning": { "de": "Erlaubt. Gib trotzdem nur ein, was die Aufgabe wirklich braucht.", "en": "Permitted. Still enter only what the task really needs." } }
+  ],
+  "clusters": [
+    { "key": "personal", "name": { "de": "Personen & Kunden", "en": "People & customers" },
+      "hint": { "de": "Namen, E-Mails, Mitarbeiter- und Kundendaten, Lebensläufe", "en": "Names, emails, employee and customer data, CVs" } },
+    { "key": "product", "name": { "de": "Produkte", "en": "Products" },
+      "hint": { "de": "Modelle, Specs, Bilder, Seriennummern", "en": "Models, specs, images, serial numbers" } },
+    { "key": "market_sales", "name": { "de": "Markt & Vertrieb", "en": "Market & sales" },
+      "hint": { "de": "Sell-out, Marktdaten, Ziele, Aktionen", "en": "Sell-out, market data, targets, promotions" } },
+    { "key": "price", "name": { "de": "Preise", "en": "Prices" },
+      "hint": { "de": "Preislisten, Verkaufspreise, interne Preise", "en": "Price lists, selling prices, internal prices" } },
+    { "key": "marketing", "name": { "de": "Marketing", "en": "Marketing" },
+      "hint": { "de": "Mediapläne, Kampagnen, Agenturberichte", "en": "Media plans, campaigns, agency reports" } },
+    { "key": "operations", "name": { "de": "Betrieb & Logistik", "en": "Operations & logistics" },
+      "hint": { "de": "Aufträge, Bestände, Retouren, Garantie", "en": "Orders, stock, returns, warranty" } },
+    { "key": "security", "name": { "de": "IT & Sicherheit", "en": "IT & security" },
+      "hint": { "de": "Passwörter, API-Schlüssel, Server, IP-Adressen", "en": "Passwords, API keys, servers, IP addresses" } },
+    { "key": "strategy", "name": { "de": "Strategie & Internes", "en": "Strategy & internal matters" },
+      "hint": { "de": "Strategien, Kunden-AGB, Kalkulation, Organisation, E-Mails", "en": "Strategies, customer T&C, cost calculation, organisation, emails" } },
+    { "key": "finance", "name": { "de": "Finanzen & Zahlen", "en": "Finance & figures" },
+      "hint": { "de": "Controlling, GuV, Prognosen, Kundenmargen, Boni", "en": "Controlling, P&L, forecasts, customer margins, bonuses" } },
+    { "key": "customer_master", "name": { "de": "Kunden- & Partnerstammdaten", "en": "Customer & partner master data" },
+      "hint": { "de": "Sold-to, Ship-to, GLN – ohne Personennamen", "en": "Sold-to, ship-to, GLN, without people's names" } },
+    { "key": "compliance", "name": { "de": "Recht & Compliance", "en": "Legal & compliance" },
+      "hint": { "de": "Geschützte Dokumente, Wettbewerber, Datenschutz", "en": "Protected documents, competitors, data protection" } },
+    { "key": "hq_basic", "name": { "de": "Grundregeln (Besprechungen, Code, Daten Dritter …)", "en": "Basic rules (meetings, code, third-party data …)" },
+      "hint": { "de": "Samsung-weit, z. B. Pläne, Strategien, Verträge, Vertrauliches", "en": "Samsung-wide, e.g. plans, strategies, contracts, confidential data" } },
+    { "key": "hq_critical", "name": { "de": "Besonders kritische Informationen", "en": "Especially critical information" },
+      "hint": { "de": "Samsung-weit, z. B. Betriebsrat, M&A, Qualitätsmängel, Rechtsstreite", "en": "Samsung-wide, e.g. works council, M&A, quality defects, litigation" } },
+    { "key": "public", "name": { "de": "Öffentlich & allgemein", "en": "Public & generic" },
+      "hint": { "de": "Pressemitteilungen, Websites, Vorlagen, Dummy-Daten", "en": "Press releases, websites, templates, dummy data" } }
+  ],
+  "dataPoints": [
+    { "row": 1, "cluster": "hq_basic", "verdict": "not_permitted", "src": "642c8d",
+      "name": {"de": "Unveröffentlichte Produktpläne", "en": "Unpublished product plans"},
+      "keywords": {"de": ["Produktplan", "Produktplanung", "Neuheit", "Launchplan", "unveröffentlicht", "Line-up"], "en": ["product plan", "product planning", "upcoming product", "launch plan", "unreleased", "line-up"]} },
+    { "row": 2, "cluster": "hq_basic", "verdict": "not_permitted", "src": "8a6c76",
+      "name": {"de": "Quellcode – öffentlicher Open-Source-Code und allgemeine Code-Schnipsel ohne Firmenbezug sind nicht betroffen", "en": "Source code; public open-source code and generic snippets without company context are not affected"},
+      "keywords": {"de": ["Code", "Programmcode", "Skript", "Software", "Entwicklung", "Agentur-Code", "interner Code"], "en": ["code", "script", "software", "programming", "development", "agency code", "internal code"]} },
+    { "row": 3, "cluster": "hq_basic", "verdict": "not_permitted", "src": "e8b19c",
+      "name": {"de": "Entwicklungs-Roadmaps", "en": "Development roadmaps"},
+      "keywords": {"de": ["Roadmap", "Entwicklungsplan", "Zeitplan", "Produktentwicklung", "F&E"], "en": ["roadmap", "development plan", "timeline", "product development", "R&D"]} },
+    { "row": 4, "cluster": "hq_basic", "verdict": "not_permitted", "src": "349bc7",
+      "name": {"de": "Persönliche Informationen von Mitarbeitenden oder Kunden (Namen, Kontaktdaten, ID-Nummern)", "en": "Personal information of employees or customers (names, contact details, ID numbers)"},
+      "keywords": {"de": ["personenbezogen", "Name", "Kontaktdaten", "Ausweisnummer", "Personalnummer", "Kunde", "Mitarbeiter"], "en": ["personal data", "name", "contact details", "ID number", "employee", "customer", "PII"]} },
+    { "row": 5, "cluster": "hq_basic", "verdict": "internal_ai_only", "src": "a5ec4b",
+      "name": {"de": "Besprechungsinhalte (Protokolle, Transkripte, Aufzeichnungen)", "en": "Meeting contents (minutes, transcripts, recordings)"},
+      "keywords": {"de": ["Meeting", "Besprechung", "Protokoll", "Transkript", "Aufzeichnung", "Teams-Meeting"], "en": ["meeting", "minutes", "transcript", "recording", "Teams call"]} },
+    { "row": 6, "cluster": "hq_basic", "verdict": "not_permitted", "src": "55ddf5",
+      "name": {"de": "Geschäftsstrategien", "en": "Business strategies"},
+      "keywords": {"de": ["Strategie", "Unternehmensstrategie", "Strategiepapier", "Geschäftsplan", "Planung"], "en": ["strategy", "corporate strategy", "strategy paper", "business plan", "planning"]} },
+    { "row": 7, "cluster": "hq_basic", "verdict": "not_permitted", "src": "0e71ca",
+      "name": {"de": "Verhandlungsdetails – allgemeine Verhandlungsvorbereitung (Argumentation, Aufbau, Formulierungen) ohne Kundennamen, Zahlen oder Konditionen ist nicht betroffen", "en": "Negotiation details; generic negotiation preparation (arguments, structure, wording) without customer names, figures or terms is not affected"},
+      "keywords": {"de": ["Verhandlung", "Jahresgespräch", "Konditionen", "Angebot", "Verhandlungsvorbereitung", "Argumentation"], "en": ["negotiation", "annual talks", "terms", "offer", "negotiation prep", "arguments"]} },
+    { "row": 8, "cluster": "hq_basic", "verdict": "not_permitted", "src": "5c26b7",
+      "name": {"de": "Persönliche Geheimnisse Dritter", "en": "Personal secrets of third parties"},
+      "keywords": {"de": ["Privatgeheimnis", "Geheimnis", "Dritte", "vertraulich", "privat"], "en": ["private secret", "secret", "third party", "confidential", "private"]} },
+    { "row": 9, "cluster": "hq_basic", "verdict": "not_permitted", "src": "7c284d",
+      "name": {"de": "Geschäftsgeheimnisse Dritter", "en": "Trade secrets of third parties"},
+      "keywords": {"de": ["Betriebsgeheimnis", "Geschäftsgeheimnis", "NDA", "Partner", "Lieferant", "vertraulich"], "en": ["business secret", "trade secret", "NDA", "partner", "supplier", "confidential"]} },
+    { "row": 10, "cluster": "hq_basic", "verdict": "not_permitted", "src": "494098",
+      "name": {"de": "Inhalte, die Urheberrechte oder geistiges Eigentum Dritter verletzen", "en": "Content that infringes third parties' copyright or intellectual property"},
+      "keywords": {"de": ["Urheberrecht", "Copyright", "geistiges Eigentum", "Lizenz", "Marke", "Patent"], "en": ["copyright", "intellectual property", "IP", "licence", "trademark", "patent"]} },
+    { "row": 11, "cluster": "hq_basic", "verdict": "not_permitted", "src": "cb2975",
+      "name": {"de": "Diffamierende oder rechtsverletzende Inhalte über Dritte, auch Verletzungen ihrer Persönlichkeitsrechte", "en": "Defamatory content about third parties, or content that infringes their rights or personality rights"},
+      "keywords": {"de": ["Verleumdung", "Diffamierung", "Rufschädigung", "Beleidigung", "Persönlichkeitsrecht"], "en": ["defamation", "libel", "slander", "insult", "personality rights"]} },
+    { "row": 12, "cluster": "hq_basic", "verdict": "not_permitted", "src": "83e40d",
+      "name": {"de": "Inhalte, die gegen Gesetze oder Vorschriften verstoßen oder gegen gesellschaftliche Normen und den gesunden Menschenverstand", "en": "Content that breaks laws or regulations, or goes against social norms and common sense"},
+      "keywords": {"de": ["illegal", "rechtswidrig", "Gesetzesverstoß", "unethisch", "anstößig"], "en": ["illegal", "unlawful", "breach of law", "unethical", "offensive"]} },
+    { "row": 13, "cluster": "hq_basic", "verdict": "not_permitted", "src": "b29efd",
+      "name": {"de": "Inhalte, die gegen Unternehmensrichtlinien verstoßen", "en": "Content that violates company policies or guidelines"},
+      "keywords": {"de": ["Richtlinie", "Policy", "Verstoß", "Compliance", "Unternehmensregeln"], "en": ["policy", "guideline", "violation", "compliance", "company rules"]} },
+    { "row": 14, "cluster": "hq_basic", "verdict": "not_permitted", "src": "969382",
+      "name": {"de": "Nicht offengelegte Vertragsinformationen und Vertragsverstöße", "en": "Undisclosed contract information and contract non-compliance or breaches"},
+      "keywords": {"de": ["Vertrag", "Vertragsinhalt", "Vertragsbruch", "Vertragsverletzung", "Rahmenvertrag", "Vereinbarung"], "en": ["contract", "contract terms", "breach of contract", "non-compliance", "framework agreement", "agreement"]} },
+    { "row": 15, "cluster": "hq_critical", "verdict": "not_permitted", "src": "7c496d",
+      "name": {"de": "Personalthemen: nicht veröffentlichte Informationen zu Gewerkschaft, Betriebsrat und Betriebsvereinbarungen, nicht veröffentlichte Antworten oder Erklärungen gegenüber Behörden, Hinweisgebermeldungen und interne Revisionsberichte", "en": "HR matters: undisclosed information on trade unions, the works council and works agreements, undisclosed responses or explanations to authorities, whistleblowing reports and internal audit reports"},
+      "keywords": {"de": ["Betriebsrat", "Betriebsvereinbarung", "Gewerkschaft", "Whistleblowing", "Hinweisgeber", "Revision", "Audit", "Behörde"], "en": ["works council", "works agreement", "trade union", "whistleblowing", "internal audit", "audit report", "authority"]} },
+    { "row": 16, "cluster": "hq_critical", "verdict": "not_permitted", "src": "a78f6b",
+      "name": {"de": "Finanz- und Managementinformationen: M&A, Risikoinformationen, technologischer Vorsprung, neue strategische Technologien", "en": "Finance and management information: M&A, risk information, technology lead, new strategic technology"},
+      "keywords": {"de": ["M&A", "Übernahme", "Fusion", "Akquisition", "Risiko", "Risikobericht", "Technologievorsprung"], "en": ["M&A", "merger", "acquisition", "takeover", "risk", "risk report", "technology advantage"]} },
+    { "row": 17, "cluster": "hq_critical", "verdict": "not_permitted", "src": "f425e5",
+      "name": {"de": "Technische Informationen: Qualitätsmängel mit Produkthaftungsbezug je Geschäftsbereich, Mängel im Markt und nicht veröffentlichte technische Schwachstellen – auch wenn sie sich aus zusammengefassten Mängeldaten ergeben", "en": "Technical information: quality defects with product liability relevance per business division, market defects and undisclosed technical vulnerabilities, including when they show in aggregated defect data"},
+      "keywords": {"de": ["Qualitätsmangel", "Produkthaftung", "Defekt", "Fehlerquote", "Schwachstelle", "Sicherheitslücke", "Rückruf"], "en": ["quality defect", "product liability", "defect", "failure rate", "vulnerability", "security flaw", "recall"]} },
+    { "row": 18, "cluster": "hq_basic", "verdict": "not_permitted", "src": "5261fd",
+      "name": {"de": "Vom Unternehmen als vertraulich eingestufte Daten – auch nicht in interne KI-Tools", "en": "Data the company has designated as confidential, not even in internal AI tools"},
+      "keywords": {"de": ["vertraulich", "Confidential", "Geheim", "Einstufung", "Klassifizierung", "Kennzeichnung"], "en": ["confidential", "classified", "secret", "classification label", "marking"]} },
+    { "row": 19, "cluster": "hq_basic", "verdict": "permitted_with_conditions", "src": "0defb8",
+      "name": {"de": "Daten aus einer anderen Abteilung", "en": "Data from another department"},
+      "condition": {"de": "Nur mit vorheriger Freigabe der Abteilung, der die Daten gehören. Diese Freigabe ersetzt den Guide nicht: Die Daten müssen hier zusätzlich erlaubt sein.", "en": "Only with prior approval from the department that owns the data. That approval does not override this guide: the data must also be permitted here."},
+      "keywords": {"de": ["Abteilung", "Fachbereich", "Freigabe", "Genehmigung", "fremde Daten", "andere Abteilung"], "en": ["department", "team", "approval", "permission", "other team's data", "data owner"]} },
+    { "row": 24, "cluster": "personal", "verdict": "not_permitted", "src": "018b7d",
+      "name": {"de": "Informationen über Mitarbeitende (Name, Personalnummer, Geburtsdatum, Geschlecht, Krankheitstage, Adresse, Gehalt, Leistungsbeurteilungen, Disziplinarmaßnahmen, Vertragsdetails, Personalakten)", "en": "Information about employees (name, ID, date of birth, sex, sick days, address, salary, performance reviews, disciplinary actions, contract details, HR records)"},
+      "keywords": {"de": ["Mitarbeiter", "Personalakte", "Gehalt", "Krankmeldung", "Beurteilung", "Abmahnung", "HR", "Kirchensteuer"], "en": ["employee", "staff", "HR record", "salary", "sick leave", "appraisal", "disciplinary", "payroll"]} },
+    { "row": 25, "cluster": "personal", "verdict": "not_permitted", "src": "9df0c9",
+      "name": {"de": "Lebensläufe (CVs)", "en": "CVs"},
+      "keywords": {"de": ["Lebenslauf", "CV", "Bewerbung", "Bewerber", "Bewerbungsunterlagen", "Recruiting"], "en": ["CV", "résumé", "resume", "application", "applicant", "recruiting"]} },
+    { "row": 26, "cluster": "personal", "verdict": "not_permitted", "src": "0741ea",
+      "name": {"de": "Personenbezogene Daten von Kunden und Partnern (Name, E-Mail, Telefonnummer, Adresse usw.) – auch von Ansprechpartnern bei Händlern", "en": "Personal data of customers and partners (name, email, phone number, address, etc.), including contact persons at retailers"},
+      "keywords": {"de": ["Kundendaten", "Ansprechpartner", "Einkäufer", "Kontaktdaten", "E-Mail-Adresse", "Telefonnummer", "B2B"], "en": ["customer data", "contact person", "buyer", "contact details", "email address", "phone number", "B2B"]} },
+    { "row": 27, "cluster": "personal", "verdict": "not_permitted", "src": "ddeda6",
+      "name": {"de": "Daten einzelner Endkunden (Kaufhistorie, Vorlieben, Feedback, Bewertungen)", "en": "Data on individual end customers (purchase history, preferences, feedback, feedback scores)"},
+      "keywords": {"de": ["Endkunde", "Verbraucher", "Kaufhistorie", "Kundenfeedback", "Bewertung", "Rezension", "Freitext"], "en": ["end customer", "consumer", "purchase history", "customer feedback", "rating", "review", "free text"]} },
+    { "row": 28, "cluster": "personal", "verdict": "not_permitted", "src": "b78209",
+      "name": {"de": "Einladungslisten (z. B. IFA) und Verteilerlisten", "en": "Invitation lists (e.g. IFA) and distribution lists"},
+      "keywords": {"de": ["Einladungsliste", "Gästeliste", "Verteiler", "Teilnehmerliste", "IFA", "Event"], "en": ["invitation list", "guest list", "mailing list", "attendee list", "IFA", "event"]} },
+    { "row": 29, "cluster": "customer_master", "verdict": "permitted_with_conditions", "src": "41d5dd",
+      "name": {"de": "Kundenstammdaten (Sold-to, Ship-to, Shopnummer, MyShop-Nummer, GLN, E-Mail ohne Personennamen, zentrale Telefonnummer, Adresse von Filiale, Hub oder Lager)", "en": "Customer master data (sold-to, ship-to, shop number, MyShop number, GLN, email without a person's name, central phone number, store, hub or warehouse address)"},
+      "condition": {"de": "Nur Stammdaten von Firmen (juristischen Personen) im indirekten Handel; Funktionspostfächer wie info@ sind in Ordnung. Keine D2C- oder Endkundendaten und keine Namen oder Adressen von Einzelkaufleuten – das sind personenbezogene Daten.", "en": "Only master data of companies (legal entities) in indirect retail; role-based mailboxes such as info@ are fine. No D2C or end-customer data, and no names or addresses of sole proprietors, as these are personal data."},
+      "keywords": {"de": ["Stammdaten", "Kundennummer", "Sold-to", "Ship-to", "MyShop", "GLN", "Händler", "Filiale"], "en": ["master data", "customer number", "sold-to", "ship-to", "MyShop", "GLN", "retailer", "store"]} },
+    { "row": 30, "cluster": "finance", "verdict": "not_permitted", "src": "96b50f",
+      "name": {"de": "Controlling-Daten", "en": "Controlling data"},
+      "keywords": {"de": ["Controlling", "Kostenstelle", "Reporting", "KPI", "Kennzahlen"], "en": ["controlling", "cost centre", "reporting", "KPI", "key figures"]} },
+    { "row": 31, "cluster": "finance", "verdict": "not_permitted", "src": "dcab3e",
+      "name": {"de": "Nicht veröffentlichte Finanzdaten", "en": "Unpublished financial data"},
+      "keywords": {"de": ["Finanzdaten", "Finanzzahlen", "Bilanz", "Quartalszahlen", "Ergebnis", "intern"], "en": ["financial data", "financials", "balance sheet", "quarterly figures", "results", "internal"]} },
+    { "row": 32, "cluster": "finance", "verdict": "not_permitted", "src": "40b8c1",
+      "name": {"de": "Gewinn- und Verlustdaten (GuV)", "en": "Profit and loss data (P&L)"},
+      "keywords": {"de": ["GuV", "P&L", "Gewinn", "Verlust", "Ergebnisrechnung", "Deckungsbeitrag"], "en": ["P&L", "profit", "loss", "income statement", "contribution margin"]} },
+    { "row": 33, "cluster": "finance", "verdict": "not_permitted", "src": "3a965c",
+      "name": {"de": "Verkaufsanalysen nach BU, SKU, Service oder SIM (Umsatz, Menge, Gewinn, AOV usw.)", "en": "Sales analyses by BU, SKU, service or SIM (revenue, quantity, profit, AOV, etc.)"},
+      "keywords": {"de": ["Verkaufsanalyse", "Umsatz", "Absatz", "Stückzahl", "Marge", "AOV", "SKU", "Business Unit"], "en": ["sales analysis", "revenue", "sales volume", "units", "margin", "AOV", "SKU", "business unit"]} },
+    { "row": 34, "cluster": "finance", "verdict": "permitted_with_conditions", "src": "fbd90a",
+      "name": {"de": "Umsatz und Menge pro Geschäftsbereich oder SKU", "en": "Revenue and quantity per business unit or SKU"},
+      "condition": {"de": "Nur anonymisiert, wie im {link} beschrieben. Nur Umsatz und Menge: Gewinn und Margen dürfen nicht hinein.", "en": "Only anonymised, as described in the {link}. Revenue and quantity only: profit and margins must not go in."},
+      "keywords": {"de": ["Umsatz", "Menge", "Stückzahl", "Absatz", "Geschäftsbereich", "BU", "SKU"], "en": ["revenue", "quantity", "units", "sales volume", "business unit", "BU", "SKU"]} },
+    { "row": 35, "cluster": "finance", "verdict": "not_permitted", "src": "38ca9b",
+      "name": {"de": "Gewinn und Margen", "en": "Profit and margins"},
+      "keywords": {"de": ["Gewinn", "Marge", "Deckungsbeitrag", "Rohertrag", "Ergebnis", "Profitabilität"], "en": ["profit", "margin", "contribution margin", "gross profit", "earnings", "profitability"]} },
+    { "row": 36, "cluster": "market_sales", "verdict": "permitted", "src": "ec49fd",
+      "name": {"de": "Veröffentlichte unverbindliche Preisempfehlungen (UVP)", "en": "Published recommended retail prices (RRP)"},
+      "keywords": {"de": ["UVP", "Preisempfehlung", "Listenpreis", "veröffentlicht", "Endkundenpreis"], "en": ["RRP", "MSRP", "recommended retail price", "list price", "published price"]} },
+    { "row": 37, "cluster": "market_sales", "verdict": "not_permitted", "src": "c83ebc",
+      "name": {"de": "Händlernettopreise (HNP), Grundmargen, Function, Aktionspreise und RNP", "en": "Dealer net prices (HNP), base margins, function, promotion prices and RNP"},
+      "keywords": {"de": ["HNP", "Händlernettopreis", "Grundmarge", "Basismarge", "Function", "Aktionspreis", "RNP"], "en": ["HNP", "dealer net price", "base margin", "function", "promotion price", "RNP"]} },
+    { "row": 38, "cluster": "finance", "verdict": "permitted_with_conditions", "src": "5bf587",
+      "name": {"de": "Prognosen, Budgets und Daten zur Zielerreichung im Vertrieb", "en": "Forecasts, budgets and sales achievement data"},
+      "condition": {"de": "Nur anonymisiert, wie im {link} beschrieben. Zielerreichung nie pro Person, nur zusammengefasst für Team oder Region mit mindestens 5 Personen.", "en": "Only anonymised, as described in the {link}. Sales achievement never per person, only aggregated by team or region with at least 5 people."},
+      "keywords": {"de": ["Forecast", "Prognose", "Budget", "Planung", "Zielerreichung", "Ist vs. Plan"], "en": ["forecast", "budget", "planning", "target achievement", "actual vs plan", "quota attainment"]} },
+    { "row": 39, "cluster": "finance", "verdict": "not_permitted", "src": "a62a92",
+      "name": {"de": "Kundenmargen, Konditionen, Boni und Einzelvereinbarungen (z. B. Jahresvereinbarung, Kickback) – auch ohne Kundennamen", "en": "Customer margins, terms, bonuses and individual agreements (e.g. annual agreement, kickback), even without the customer name"},
+      "keywords": {"de": ["Marge", "Konditionen", "Bonus", "Rabatt", "Jahresvereinbarung", "Kickback", "WKZ"], "en": ["margin", "terms", "bonus", "rebate", "annual agreement", "kickback", "trade terms"]} },
+    { "row": 40, "cluster": "product", "verdict": "permitted_with_conditions", "src": "060b76",
+      "name": {"de": "Modellcode, Kategorisierung und Spezifikationen (Produktstammdaten)", "en": "Model code, categorisation and specifications (product master data)"},
+      "condition": {"de": "Erst nach dem offiziellen Marktstart des Produkts.", "en": "Only after the product's official launch."},
+      "keywords": {"de": ["Modellnummer", "Modellcode", "Spezifikation", "technische Daten", "Datenblatt", "Produktstammdaten", "Launch"], "en": ["model number", "model code", "specs", "technical data", "data sheet", "product master data", "launch"]} },
+    { "row": 41, "cluster": "product", "verdict": "permitted_with_conditions", "src": "76b1e3",
+      "name": {"de": "Produktbilder", "en": "Product images"},
+      "condition": {"de": "Erst nach dem offiziellen Marktstart. Prüfe vorher die Bildrechte: Agentur- oder Fotografenlizenzen können KI-Tools ausschließen, und auf Bildern mit Personen (Models, Mitarbeitende) gelten deren Persönlichkeitsrechte.", "en": "Only after official launch. Check the image rights first: agency or photographer licences may exclude AI tools, and images showing people (models, staff) involve their personality rights."},
+      "keywords": {"de": ["Produktfoto", "Bild", "Foto", "Packshot", "Bildrechte", "Lizenz", "Launch"], "en": ["product photo", "image", "photo", "packshot", "image rights", "licence", "launch"]} },
+    { "row": 42, "cluster": "product", "verdict": "permitted_with_conditions", "src": "ecf38b",
+      "name": {"de": "Seriennummern", "en": "Serial numbers"},
+      "condition": {"de": "Nur anonymisiert, wie im {link} beschrieben. Seriennummern verkaufter Geräte lassen sich über Registrierung, Garantie oder Service einer Person zuordnen: Ersetze sie durch Platzhalter. Seriennummern noch nicht verkaufter Geräte (Lager, B-Ware) dürfen unverändert hinein.", "en": "Only anonymised, as described in the {link}. Serial numbers of sold devices can be traced to a person through registration, warranty or service, so replace them with placeholders. Serial numbers of devices not yet sold (stock, warehouse, B-stock) may go in as they are."},
+      "keywords": {"de": ["Seriennummer", "Seriennr", "S/N", "Gerätenummer"], "en": ["serial number", "serial no", "S/N", "device number"]} },
+    { "row": 43, "cluster": "product", "verdict": "permitted", "src": "8d3a2b",
+      "name": {"de": "Produktlebenszyklus und Produktstatus", "en": "Product life cycle and product status"},
+      "keywords": {"de": ["Lebenszyklus", "Produktstatus", "Auslaufmodell", "EOL"], "en": ["life cycle", "product status", "end of life", "EOL"]} },
+    { "row": 44, "cluster": "market_sales", "verdict": "permitted_with_conditions", "src": "35ebf9",
+      "name": {"de": "Inhouse-Share pro Shop (Vorjahresvergleich auf Produktgruppenebene)", "en": "In-house share by shop (year-on-year comparison at product group level)"},
+      "condition": {"de": "Stammen die Daten nicht von der SEG selbst (z. B. vom Händler, meist unter NDA), brauchst du vorher die Erlaubnis des Datengebers. Es dürfen keine Rückschlüsse auf Personen oder geheime Informationen möglich sein.", "en": "If the data does not come from SEG itself (e.g. from a retailer, usually under NDA), you need the provider's permission first. No conclusions about individuals or confidential information may be possible."},
+      "keywords": {"de": ["Marktanteil", "Share", "Shop", "Vorjahr", "YoY", "Produktgruppe", "Händlerdaten"], "en": ["market share", "share", "shop", "previous year", "YoY", "product group", "retailer data"]} },
+    { "row": 45, "cluster": "market_sales", "verdict": "permitted_with_conditions", "src": "77b170",
+      "name": {"de": "Vertriebsziele pro Modell, Verkäufer oder Region", "en": "Sales targets per model, salesperson or region"},
+      "condition": {"de": "Nur anonymisiert, wie im {link} beschrieben. Ziele nur zusammengefasst auf Team- oder Regionsebene mit mindestens 5 Personen. Ziele für einzelne Personen dürfen nicht hinein, auch nicht ohne Namen.", "en": "Only anonymised, as described in the {link}. Targets only aggregated at team or region level with at least 5 people. Targets for individual salespeople must not go in, not even without names."},
+      "keywords": {"de": ["Zielvorgabe", "Sales Target", "Quote", "Verkaufsziel", "Außendienst", "Region"], "en": ["target", "sales target", "quota", "sales goal", "field sales", "region"]} },
+    { "row": 46, "cluster": "market_sales", "verdict": "permitted_with_conditions", "src": "ee1253",
+      "name": {"de": "Gekaufte Marktdaten (z. B. GfK-Hitlist, mit Marktanalysen, Markttrends, Saisonalität)", "en": "Purchased market data (e.g. GfK hitlist, including market analyses, market trends, seasonality)"},
+      "condition": {"de": "Nur mit vorheriger Erlaubnis des Datenanbieters, z. B. GfK oder NIQ.", "en": "Only with the data provider's prior permission, e.g. GfK or NIQ."},
+      "keywords": {"de": ["GfK", "NIQ", "NielsenIQ", "Hitlist", "Marktforschung", "Marktanalyse", "Lizenzdaten"], "en": ["GfK", "NIQ", "NielsenIQ", "hitlist", "market research", "market analysis", "licensed data"]} },
+    { "row": 47, "cluster": "market_sales", "verdict": "permitted_with_conditions", "src": "88c089",
+      "name": {"de": "Shop-Flooring pro Modell und Woche", "en": "Shop flooring by model and week"},
+      "condition": {"de": "Stammen die Daten nicht von der SEG selbst, brauchst du vorher die Erlaubnis des Datengebers.", "en": "If the data does not come from SEG itself, you need the provider's permission first."},
+      "keywords": {"de": ["Flooring", "Platzierung", "Verkaufsfläche", "Ausstellung", "Display", "Händlerdaten"], "en": ["flooring", "placement", "shop floor", "display", "in-store", "retailer data"]} },
+    { "row": 48, "cluster": "market_sales", "verdict": "permitted_with_conditions", "src": "0b0467",
+      "name": {"de": "Aktionsplanungsdaten aus Salesforce (MyShop Owner, Kanal, Aktivitätsstatus, Aktionsname, Start und Ende, Modell, RNP, Aktionspreis, Sell-in-Unterstützung, geplante Sell-in-Menge, Budgetquelle, MyShopOwner ID)", "en": "Promotion planning data from Salesforce (MyShop Owner, channel, activity status, action name, start and end, model, RNP, activity price, sell-in support, planned sell-in quantity, budget source, MyShopOwner ID)"},
+      "condition": {"de": "Nur anonymisiert, wie im {link} beschrieben. Entferne neben dem Kundennamen auch die Felder MyShop Owner und MyShopOwner ID. RNP und Aktionspreise dürfen nicht hinein.", "en": "Only anonymised, as described in the {link}. Remove the MyShop Owner and MyShopOwner ID fields as well as the customer name. RNP and activity prices must not go in."},
+      "keywords": {"de": ["Salesforce", "MyShop", "Promotion", "Aktion", "Aktionspreis", "Sell-in", "RNP"], "en": ["Salesforce", "MyShop", "promotion", "campaign", "promo price", "sell-in", "RNP"]} },
+    { "row": 49, "cluster": "market_sales", "verdict": "permitted_with_conditions", "src": "491d19",
+      "name": {"de": "Fortschritt beim Auftragseingang nach Kunde, Kanal oder Verkäufer", "en": "Order intake progress by customer, channel or salesperson"},
+      "condition": {"de": "Nur anonymisiert, wie im {link} beschrieben. Werte pro Verkäufer nur zusammengefasst auf Teamebene mit mindestens 5 Personen, nie für einzelne Personen.", "en": "Only anonymised, as described in the {link}. Figures by salesperson only aggregated at team level with at least 5 people, never for individuals."},
+      "keywords": {"de": ["Auftragseingang", "Order Intake", "Bestellungen", "Kanal", "Vertrieb", "Pipeline"], "en": ["order intake", "orders", "bookings", "channel", "sales", "pipeline"]} },
+    { "row": 50, "cluster": "market_sales", "verdict": "permitted_with_conditions", "src": "e4adf6",
+      "name": {"de": "Sell-out pro Modell (Betrag, Menge)", "en": "Sell-out per model (amount, quantity)"},
+      "condition": {"de": "Nur mit vorheriger Erlaubnis des Händlers oder Partners, von dem die Zahlen stammen (z. B. über Händlerportal oder EDI).", "en": "Only with prior permission from the retailer or partner the figures came from (e.g. via a retailer portal or EDI)."},
+      "keywords": {"de": ["Sell-out", "Abverkauf", "Verkaufszahlen", "EDI", "Händlerportal", "Stückzahl"], "en": ["sell-out", "sales out", "sales figures", "EDI", "retailer portal", "units sold"]} },
+    { "row": 51, "cluster": "market_sales", "verdict": "permitted", "src": "610648",
+      "name": {"de": "Auftragsbestand nach Modell (Menge, Betrag) – kundenbezogene Werte nur anonymisiert", "en": "Sales backlog by model (quantity, amount); customer-specific figures only anonymised"},
+      "keywords": {"de": ["Backlog", "Auftragsbestand", "offene Aufträge", "Rückstand", "Lieferrückstand"], "en": ["backlog", "order backlog", "open orders", "outstanding orders", "pending orders"]} },
+    { "row": 52, "cluster": "market_sales", "verdict": "permitted_with_conditions", "src": "835322",
+      "name": {"de": "Umsatz nach Kunde oder Produktgruppe und Anteil am Gesamtumsatz", "en": "Turnover by customer or product group and share of total turnover"},
+      "condition": {"de": "Nur anonymisiert, wie im {link} beschrieben. Gib Anteile am Gesamtumsatz nur als Spannen oder Gruppen an, sonst sind große Kunden trotzdem erkennbar.", "en": "Only anonymised, as described in the {link}. Give shares of total turnover only as ranges or groupings; otherwise dominant customers can still be identified."},
+      "keywords": {"de": ["Umsatz", "Kundenumsatz", "Umsatzanteil", "Produktgruppe", "Top-Kunden", "Ranking"], "en": ["turnover", "revenue", "customer revenue", "revenue share", "product group", "top customers"]} },
+    { "row": 54, "cluster": "price", "verdict": "permitted", "src": "54d95b",
+      "name": {"de": "Verkaufspreise der Kunden je Modell, Produktgruppe, Kanal oder Kunde (täglich oder wöchentlich)", "en": "Customer selling prices per model, product group, channel or customer (daily or weekly)"},
+      "keywords": {"de": ["Verkaufspreis", "Endkundenpreis", "Straßenpreis", "Regalpreis", "Preisbeobachtung", "Preismonitoring", "Sell-out-Preis"], "en": ["selling price", "retail price", "street price", "shelf price", "price monitoring", "sell-out price"]} },
+    { "row": 55, "cluster": "price", "verdict": "permitted", "src": "ae0f05",
+      "name": {"de": "Durchschnittlicher RNP und ASP (durchschnittlicher Verkaufspreis)", "en": "Average RNP and ASP (average selling price)"},
+      "keywords": {"de": ["RNP", "ASP", "Durchschnittspreis", "Preis-KPI", "Nettopreis", "Produktgruppe"], "en": ["RNP", "ASP", "average price", "price KPI", "net price", "product group"]} },
+    { "row": 56, "cluster": "price", "verdict": "not_permitted", "src": "50a1be",
+      "name": {"de": "Interne Produktpreise (z. B. CIF, MAP)", "en": "Internal product prices (e.g. CIF, MAP)"},
+      "keywords": {"de": ["CIF", "MAP", "interner Preis", "Einstandspreis", "Konzernpreis", "Kostenpreis"], "en": ["CIF", "MAP", "internal price", "cost price", "transfer price", "landed cost"]} },
+    { "row": 58, "cluster": "strategy", "verdict": "not_permitted", "src": "faffaf",
+      "name": {"de": "Konditionen und Geschäftsbedingungen mit Kunden (T&C)", "en": "Customer terms and conditions (T&C)"},
+      "keywords": {"de": ["T&C", "AGB", "Konditionen", "Kundenkonditionen", "Vertragsbedingungen", "Zahlungsbedingungen"], "en": ["T&C", "trade terms", "customer terms", "contract terms", "payment terms", "conditions"]} },
+    { "row": 59, "cluster": "strategy", "verdict": "not_permitted", "src": "513745",
+      "name": {"de": "Daten zur Gewinnkalkulation (Gemeinkosten für Marketing, Verwaltung, Logistik, Service, Personal usw.)", "en": "Data for profit calculation (overhead costs for marketing, administration, logistics, service, personnel, etc.)"},
+      "keywords": {"de": ["Gewinnkalkulation", "Gemeinkosten", "Overhead", "Kostenstruktur", "Marge", "Deckungsbeitrag", "P&L"], "en": ["profit calculation", "overheads", "cost structure", "margin", "contribution margin", "P&L"]} },
+    { "row": 60, "cluster": "strategy", "verdict": "not_permitted", "src": "631c91",
+      "name": {"de": "Interne Strategien, Richtlinien und Geschäftsgeheimnisse", "en": "Internal strategies, policies and trade secrets"},
+      "keywords": {"de": ["Strategie", "Richtlinie", "Policy", "Geschäftsgeheimnis", "Betriebsgeheimnis", "Strategiepapier"], "en": ["strategy", "policy", "trade secret", "business secret", "internal guideline", "strategy paper"]} },
+    { "row": 61, "cluster": "strategy", "verdict": "permitted_with_conditions", "src": "737fc8",
+      "name": {"de": "Organisations- und Gruppendaten (Abteilungen, Karrierestufen, Mitarbeitergruppen)", "en": "Organisational and group data (departments, career levels, employee groups)"},
+      "condition": {"de": "Nur anonymisiert, wie im {link} beschrieben. Gib nur Daten zu Gruppen mit mindestens 5 Personen ein, nie Angaben zu Einzelnen. Sehr kleine Gruppen, etwa eine Person pro Karrierestufe im Team, lassen sich zuordnen.", "en": "Only anonymised, as described in the {link}. Enter only data on groups of at least 5 people, never details on individuals. Very small groups, such as one person per career level in a team, can be identified."},
+      "keywords": {"de": ["Organigramm", "Abteilung", "Karrierestufe", "Mitarbeitergruppe", "Teamstruktur", "Headcount", "Org-Chart"], "en": ["org chart", "department", "career level", "employee group", "team structure", "headcount"]} },
+    { "row": 62, "cluster": "strategy", "verdict": "permitted_with_conditions", "src": "c75496",
+      "name": {"de": "Stellenbeschreibungen", "en": "Job descriptions"},
+      "condition": {"de": "Nur anonymisiert, wie im {link} beschrieben. Entferne Namen und persönliche Angaben. Gibt es die Rolle nur einmal, verrät schon die Stellenbezeichnung die Person – lass sie dann weg.", "en": "Only anonymised, as described in the {link}. Remove names and personal details. If the role exists only once, the job title alone reveals the person, so leave it out."},
+      "keywords": {"de": ["Jobbeschreibung", "Rollenbeschreibung", "Stellenprofil", "Jobprofil", "Aufgabenbeschreibung", "Job Description"], "en": ["role description", "job profile", "JD", "position description", "job title"]} },
+    { "row": 63, "cluster": "strategy", "verdict": "internal_ai_only", "src": "6599d6",
+      "name": {"de": "E-Mail-Inhalte", "en": "Email contents"},
+      "keywords": {"de": ["E-Mail", "Mail", "Outlook", "Postfach", "Mailverlauf", "Signatur", ".msg", ".pst"], "en": ["e-mail", "mail", "Outlook", "mailbox", "email thread", "signature", ".msg", ".pst"]} },
+    { "row": 64, "cluster": "strategy", "verdict": "permitted_with_conditions", "src": "adcfe7",
+      "name": {"de": "Produktkanalisierung (welche Produkte über welche Vertriebskanäle laufen)", "en": "Product channelisation (which products go through which sales channels)"},
+      "condition": {"de": "Nur anonymisiert, wie im {link} beschrieben. Künftige Kanalisierungspläne gelten als Geschäftsstrategie und dürfen nicht hinein.", "en": "Only anonymised, as described in the {link}. Future channelisation plans count as business strategy and must not go in."},
+      "keywords": {"de": ["Kanalisierung", "Channelization", "Vertriebskanal", "Kanalzuordnung", "Kanalstrategie", "Channel"], "en": ["channelization", "sales channel", "channel allocation", "channel mix", "channel strategy"]} },
+    { "row": 65, "cluster": "security", "verdict": "not_permitted", "src": "df6271",
+      "name": {"de": "Zugangsdaten, Passwörter, API-Schlüssel und Tokens – auch in Screenshots und Logauszügen", "en": "Access data, passwords, API keys and tokens, including in screenshots and log excerpts"},
+      "keywords": {"de": ["Passwort", "Passwörter", "Kennwort", "API-Key", "Token", "Zugangsdaten", "Login", "Screenshot", "Logauszug"], "en": ["password", "API key", "token", "credentials", "login", "screenshot", "log excerpt"]} },
+    { "row": 66, "cluster": "hq_critical", "verdict": "not_permitted", "src": "01571d",
+      "name": {"de": "Informationen aus der Produktentwicklung: Secure-Boot-Module und kryptografische Schlüssel", "en": "Product development information: secure boot modules and cryptographic keys"},
+      "keywords": {"de": ["Secure Boot", "Kryptoschlüssel", "Verschlüsselung", "Private Key", "Signaturschlüssel", "Firmware"], "en": ["secure boot", "crypto key", "encryption key", "private key", "signing key", "firmware"]} },
+    { "row": 67, "cluster": "security", "verdict": "not_permitted", "src": "03730f",
+      "name": {"de": "Server-IDs, auch IP-Adressen, Hostnamen und interne URLs", "en": "Server IDs, including IP addresses, hostnames and internal URLs"},
+      "keywords": {"de": ["Server", "Servername", "IP", "Hostname", "Intranet-Link", "interner Link", "Netzwerk"], "en": ["server", "server name", "IP", "host name", "intranet link", "internal link", "network"]} },
+    { "row": 68, "cluster": "operations", "verdict": "permitted_with_conditions", "src": "3b86c5",
+      "name": {"de": "Lieferkettendetails (Produktionsstandort, Lieferzeit, nächster Bestelltermin usw.)", "en": "Supply chain details (production site, lead time, next order date, etc.)"},
+      "condition": {"de": "Nur anonymisiert, wie im {link} beschrieben. Lieferantennamen dürfen nicht hinein, sie zählen zu den Lieferantenstammdaten.", "en": "Only anonymised, as described in the {link}. Supplier names must not go in, as they count as supplier master data."},
+      "keywords": {"de": ["Supply Chain", "Lieferkette", "Lead Time", "Vorlaufzeit", "Bestellzyklus", "Werk", "Lieferant"], "en": ["supply chain", "lead time", "order cycle", "factory", "plant", "supplier", "next order"]} },
+    { "row": 69, "cluster": "operations", "verdict": "permitted", "src": "31f0fa",
+      "name": {"de": "Aging-Analysen (Alter von Beständen nach Menge und Betrag)", "en": "Ageing analyses (age of stock by quantity and amount)"},
+      "keywords": {"de": ["Aging", "Ageing", "Lageralter", "Altbestand", "Bestandsalter", "Lagerdauer"], "en": ["aging", "stock age", "old stock", "inventory age", "days in stock", "slow movers"]} },
+    { "row": 70, "cluster": "operations", "verdict": "permitted_with_conditions", "src": "3e0c3f",
+      "name": {"de": "Absatz- und Materialprognosen sowie Materialplanung (AP1, AP2, RTF usw.) nach SKU und Betrag", "en": "Sales and material forecasts and material planning (AP1, AP2, RTF, etc.) by SKU and amount"},
+      "condition": {"de": "Nur anonymisiert, wie im {link} beschrieben, sodass weder Kunden noch Personen erkennbar sind.", "en": "Only anonymised, as described in the {link}, so that no customer or person can be identified."},
+      "keywords": {"de": ["Forecast", "Prognose", "AP1", "AP2", "RTF", "Absatzplanung", "Bedarfsplanung", "SKU"], "en": ["forecast", "AP1", "AP2", "RTF", "demand planning", "sales forecast", "SKU", "planning data"]} },
+    { "row": 71, "cluster": "operations", "verdict": "permitted_with_conditions", "src": "84c31b",
+      "name": {"de": "PSI-Daten, Warenbewegungs- und Bestandsdaten – intern und von Kunden oder Partnern geteilt", "en": "PSI data, material movement and inventory data, internal and shared by customers or partners"},
+      "condition": {"de": "Gib die Daten nur anonymisiert ein, wie im {link} beschrieben. Daten, die Kunden oder Partner geteilt haben, nur mit deren vorheriger Erlaubnis.", "en": "Enter the data only anonymised, as described in the {link}. Data shared by customers or partners only with their prior permission."},
+      "keywords": {"de": ["PSI", "Purchase Sales Inventory", "Lagerbestand", "Warenbewegung", "Sell-in", "Sell-out", "GSCM"], "en": ["PSI", "purchase sales inventory", "stock level", "stock movement", "sell-in", "sell-out", "GSCM"]} },
+    { "row": 72, "cluster": "operations", "verdict": "permitted_with_conditions", "src": "55eb9c",
+      "name": {"de": "Daten von Lieferanten, Kunden oder Partnern (z. B. EDI)", "en": "Data provided by suppliers, customers or partners (e.g. EDI)"},
+      "condition": {"de": "Nur mit Erlaubnis des Lieferanten, Kunden oder Partners, von dem die Daten stammen. Entferne vorher Namen und Lieferadressen von Endkunden, etwa bei Direktlieferungen über Händler.", "en": "Only with permission from the supplier, customer or partner the data came from. First remove consumer names and delivery addresses, e.g. from drop shipments via retailers."},
+      "keywords": {"de": ["EDI", "Partnerdaten", "Lieferantendaten", "Kundendaten", "Drittdaten", "Datenaustausch", "Direktlieferung"], "en": ["EDI", "partner data", "supplier data", "customer data", "third-party data", "data exchange", "drop shipment"]} },
+    { "row": 73, "cluster": "operations", "verdict": "permitted_with_conditions", "src": "fd9635",
+      "name": {"de": "Auftragsdaten", "en": "Order data"},
+      "condition": {"de": "Nur anonymisiert, wie im {link} beschrieben. Entferne vor allem Namen und Adressen von Endkunden aus den Lieferadressfeldern (Direktlieferung).", "en": "Only anonymised, as described in the {link}. In particular, remove consumer names and addresses from the ship-to fields (drop shipment)."},
+      "keywords": {"de": ["Auftrag", "Bestellung", "Bestelldaten", "Kundenauftrag", "Ship-to", "Lieferadresse"], "en": ["order", "purchase order", "sales order", "order details", "ship-to", "delivery address"]} },
+    { "row": 74, "cluster": "operations", "verdict": "permitted_with_conditions", "src": "9089e7",
+      "name": {"de": "Daten zur Auftragszuteilung (SO-Nr., Artikel, SO-Woche, Account, Kunde, PO-Nr., RDD, PO-Referenz, Auftragswert, WOS, Usage Code)", "en": "Order allocation data (SO no., items, SO week, account, customer, PO no., RDD, PO reference, order amount, WOS, usage code)"},
+      "condition": {"de": "Nur anonymisiert, wie im {link} beschrieben. Ersetze Kunden und Accounts durch einheitliche Kürzel (z. B. CUST_001). Die Zuordnungstabelle bleibt immer in den internen Systemen.", "en": "Only anonymised, as described in the {link}. Replace customers and accounts with consistent codes (e.g. CUST_001). The mapping table always stays in internal systems."},
+      "keywords": {"de": ["Allocation", "Zuteilung", "Auftragsnummer", "SO", "PO", "RDD", "WOS", "Pseudonymisierung"], "en": ["allocation", "SO number", "PO number", "RDD", "WOS", "pseudonymise", "sales order"]} },
+    { "row": 75, "cluster": "operations", "verdict": "permitted", "src": "3c5a5a",
+      "name": {"de": "Betriebliche Abläufe und Prozessbeschreibungen – ohne Namen und Zugangsdaten", "en": "Operational processes and process descriptions, without names or system credentials"},
+      "keywords": {"de": ["Prozess", "Ablauf", "Workflow", "SOP", "Arbeitsanweisung", "Prozessdoku"], "en": ["process", "workflow", "SOP", "procedure", "work instruction", "process documentation"]} },
+    { "row": 76, "cluster": "operations", "verdict": "permitted_with_conditions", "src": "37e468",
+      "name": {"de": "Retourendaten (z. B. RMA-Nummer, Servicepartner, Gutschriftsbetrag)", "en": "Return data (e.g. RMA number, service partner, credit amount)"},
+      "condition": {"de": "Nur anonymisiert, wie im {link} beschrieben. Entferne vor allem Namen, Adressen und Seriennummern von Endkunden. Servicepartner dürfen nur dann namentlich drinbleiben, wenn es Firmen sind und keine Einzelunternehmer.", "en": "Only anonymised, as described in the {link}. In particular, remove consumer names, addresses and serial numbers. Service partners may stay named only if they are companies, not sole traders."},
+      "keywords": {"de": ["Retoure", "Rücksendung", "RMA", "Gutschrift", "Servicepartner", "Rückläufer"], "en": ["return", "returns", "RMA", "credit note", "service partner", "refund"]} },
+    { "row": 77, "cluster": "operations", "verdict": "internal_ai_only", "src": "3d4509",
+      "name": {"de": "Garantiedaten (SO, Servicepartner-Nr. und -Name, Garantierechnungs-Nr., Buchungs-, Kauf- und Produktionsdatum, Modellcode, Fehler- und Reparaturbeschreibung, Ersatzteile, Arbeits- und Frachtkosten)", "en": "Warranty data (SO, service partner no. and name, warranty bill no., posting, purchase and production date, model code, defect and repair description, spare parts, labour and freight fees)"},
+      "keywords": {"de": ["Garantie", "Gewährleistung", "Reparatur", "Fehlerbeschreibung", "Ersatzteile", "Servicepartner", "Garantieabrechnung"], "en": ["warranty", "repair", "defect description", "spare parts", "service partner", "warranty claim", "labour fee"]} },
+    { "row": 78, "cluster": "marketing", "verdict": "not_permitted", "src": "2aa7d8",
+      "name": {"de": "Noch nicht veröffentlichte Produkt- und Launch-Informationen (Produktname, Spezifikationen, Launch-Richtlinien)", "en": "Unpublished product and launch information (product name, specs, launch guidelines)"},
+      "keywords": {"de": ["Launch", "Produktlaunch", "Unpacked", "Neuheit", "Specs", "Vorabinformation", "Embargo"], "en": ["launch", "product launch", "Unpacked", "new product", "specifications", "pre-launch", "embargo"]} },
+    { "row": 79, "cluster": "marketing", "verdict": "permitted_with_conditions", "src": "738155",
+      "name": {"de": "Mediapläne – laufende und geplante", "en": "Media plans, current and planned"},
+      "condition": {"de": "Nur wenn der Vertrag mit der Mediaagentur die Nutzung nicht ausdrücklich verbietet.", "en": "Only if the contract with the media agency doesn't explicitly forbid such use."},
+      "keywords": {"de": ["Mediaplan", "Mediaplanung", "Kampagnenplan", "Mediabudget", "Schaltplan", "Flighting"], "en": ["media plan", "media planning", "campaign plan", "media budget", "media schedule", "flighting"]} },
+    { "row": 80, "cluster": "marketing", "verdict": "permitted_with_conditions", "src": "053ada",
+      "name": {"de": "Reportings von Marketingagenturen", "en": "Marketing agency reports"},
+      "condition": {"de": "Nur mit Nutzungserlaubnis der Agentur und nachdem du geprüft hast, dass keine sensiblen Daten enthalten sind.", "en": "Only with the agency's permission to use it, and after you have checked that it contains no sensitive data."},
+      "keywords": {"de": ["Agentur", "Agenturreport", "Reporting", "Kampagnenreport", "Bericht", "Mediaagentur"], "en": ["agency", "agency report", "reporting", "campaign report", "media agency", "performance report"]} },
+    { "row": 86, "cluster": "personal", "verdict": "not_permitted", "src": "46ccf5",
+      "name": {"de": "Besondere Kategorien personenbezogener Daten (Gesundheit, Gewerkschaftszugehörigkeit, Religion, ethnische Herkunft, Biometrie, sexuelle Orientierung)", "en": "Special categories of personal data (health, trade union membership, religion, ethnic origin, biometrics, sexual orientation)"},
+      "keywords": {"de": ["Gesundheitsdaten", "Krankheit", "Gewerkschaft", "Religion", "Biometrie", "sensible Daten", "ethnische Herkunft"], "en": ["health data", "illness", "trade union", "religion", "biometrics", "sensitive data", "ethnic origin"]} },
+    { "row": 87, "cluster": "personal", "verdict": "not_permitted", "src": "f66ead",
+      "name": {"de": "Fotos, Videos und Sprachaufnahmen von Personen (z. B. von Events, Messen oder Teams-Aufzeichnungen)", "en": "Photos, videos and voice recordings of people (e.g. from events, trade fairs or Teams recordings)"},
+      "keywords": {"de": ["Foto", "Video", "Aufnahme", "Sprachaufnahme", "Teams-Aufzeichnung", "Event", "Messe"], "en": ["photo", "video", "recording", "voice recording", "Teams recording", "event", "trade fair"]} },
+    { "row": 88, "cluster": "personal", "verdict": "not_permitted", "src": "c8c4ee",
+      "name": {"de": "Bewerberdaten über den Lebenslauf hinaus (Interviewnotizen, Beurteilungen, Referenzen)", "en": "Applicant data beyond CVs (interview notes, assessments, references)"},
+      "keywords": {"de": ["Bewerber", "Bewerbung", "Vorstellungsgespräch", "Interviewnotizen", "Beurteilung", "Referenz", "Recruiting"], "en": ["applicant", "application", "interview notes", "candidate assessment", "reference", "recruiting"]} },
+    { "row": 89, "cluster": "personal", "verdict": "not_permitted", "src": "c93371",
+      "name": {"de": "Reise- und Spesendaten (Reisekostenabrechnungen, Kreditkartenabrechnungen, Hotelrechnungen)", "en": "Travel and expense data (travel expense claims, credit card statements, hotel bills)"},
+      "keywords": {"de": ["Reisekosten", "Spesen", "Kreditkarte", "Hotelrechnung", "Reisekostenabrechnung", "Beleg"], "en": ["travel expenses", "expenses", "credit card statement", "hotel bill", "expense report", "receipt"]} },
+    { "row": 90, "cluster": "personal", "verdict": "internal_ai_only", "src": "d24ddd",
+      "name": {"de": "Kalendereinträge und Inhalte aus Teams-Chats", "en": "Calendar entries and Teams chat contents"},
+      "keywords": {"de": ["Kalender", "Termin", "Outlook", "Teams", "Chat", "Chatverlauf"], "en": ["calendar", "appointment", "Outlook", "Teams", "chat", "chat history"]} },
+    { "row": 91, "cluster": "personal", "verdict": "not_permitted", "src": "26f7f1",
+      "name": {"de": "Ergebnisse von Mitarbeiterbefragungen (z. B. Engagement-Umfragen, Pulse Checks), auch zusammengefasst", "en": "Employee survey results (e.g. engagement surveys, pulse checks), also when summarised"},
+      "keywords": {"de": ["Mitarbeiterbefragung", "Umfrage", "Engagement", "Pulse Check", "Feedback", "Zufriedenheit"], "en": ["employee survey", "survey", "engagement", "pulse check", "feedback", "satisfaction"]} },
+    { "row": 92, "cluster": "personal", "verdict": "not_permitted", "src": "4fb5aa",
+      "name": {"de": "System- und Nutzungsprotokolle mit Benutzer-IDs (z. B. Login-Protokolle, Nutzungsberichte von Tools)", "en": "System logs and usage data with user IDs (e.g. login logs, tool usage reports)"},
+      "keywords": {"de": ["Log", "Protokoll", "Login", "Benutzer-ID", "Nutzungsbericht", "Logfile"], "en": ["log", "login log", "user ID", "usage report", "log file", "audit log"]} },
+    { "row": 93, "cluster": "personal", "verdict": "not_permitted", "src": "9b2885",
+      "name": {"de": "Teilnehmende an Verbraucheraktionen (Cashback, Trade-in, Gewinnspiele, Newsletter-Abonnenten)", "en": "Participants in consumer campaigns (cashback, trade-in, prize draws, newsletter subscribers)"},
+      "keywords": {"de": ["Cashback", "Trade-in", "Gewinnspiel", "Newsletter", "Teilnehmer", "Verbraucher", "Aktion"], "en": ["cashback", "trade-in", "prize draw", "raffle", "newsletter", "participants", "consumers"]} },
+    { "row": 94, "cluster": "personal", "verdict": "not_permitted", "src": "d1e564",
+      "name": {"de": "Kundenservicedaten (Tickets, Anrufaufzeichnungen, Chatverläufe, Beschwerden)", "en": "Customer service data (tickets, call recordings, chat logs, complaints)"},
+      "keywords": {"de": ["Kundenservice", "Ticket", "Anrufaufzeichnung", "Chatverlauf", "Beschwerde", "Reklamation", "Callcenter"], "en": ["customer service", "ticket", "call recording", "chat log", "complaint", "call centre"]} },
+    { "row": 95, "cluster": "personal", "verdict": "not_permitted", "src": "34a65c",
+      "name": {"de": "Social-Media-Daten (Kommentare von Verbrauchern, Benutzernamen, Daten zu Influencern)", "en": "Social media data (consumer comments, user names, influencer data)"},
+      "keywords": {"de": ["Social Media", "Kommentar", "Benutzername", "Influencer", "Instagram", "Community"], "en": ["social media", "comment", "user name", "influencer", "Instagram", "community"]} },
+    { "row": 96, "cluster": "personal", "verdict": "not_permitted", "src": "ae0e1b",
+      "name": {"de": "Logistikdaten mit Personenbezug (Namen von Fahrern, Kennzeichen, Lieferadressen von Verbrauchern)", "en": "Logistics data with personal details (driver names, licence plates, consumers' delivery addresses)"},
+      "keywords": {"de": ["Fahrer", "Kennzeichen", "Lieferadresse", "Zustellung", "Spedition", "Tracking"], "en": ["driver", "licence plate", "delivery address", "delivery", "carrier", "tracking"]} },
+    { "row": 97, "cluster": "finance", "verdict": "not_permitted", "src": "cd4f01",
+      "name": {"de": "Kreditlimits, Kreditversicherung und Bonität von Kunden", "en": "Customer credit limits, credit insurance and creditworthiness"},
+      "keywords": {"de": ["Kreditlimit", "Kreditversicherung", "Bonität", "Zahlungsfähigkeit", "Rating", "Forderungen"], "en": ["credit limit", "credit insurance", "creditworthiness", "credit rating", "solvency", "receivables"]} },
+    { "row": 98, "cluster": "finance", "verdict": "not_permitted", "src": "ddd74c",
+      "name": {"de": "Rechnungen, Gutschriften und Bankdaten (z. B. IBAN)", "en": "Invoices, credit notes and bank details (e.g. IBAN)"},
+      "keywords": {"de": ["Rechnung", "Gutschrift", "IBAN", "Bankverbindung", "Kontodaten", "Zahlung"], "en": ["invoice", "credit note", "IBAN", "bank details", "account details", "payment"]} },
+    { "row": 99, "cluster": "finance", "verdict": "not_permitted", "src": "c8a474",
+      "name": {"de": "Prüfberichte (interne Revision, externe Wirtschaftsprüfer), Steuer- und Verrechnungspreisdaten", "en": "Audit reports (internal audit, external auditors), tax and transfer pricing data"},
+      "keywords": {"de": ["Prüfbericht", "Revision", "Audit", "Wirtschaftsprüfer", "Steuer", "Verrechnungspreis"], "en": ["audit report", "internal audit", "auditor", "audit", "tax", "transfer pricing"]} },
+    { "row": 100, "cluster": "operations", "verdict": "not_permitted", "src": "d096a1",
+      "name": {"de": "Zoll- und Exportkontrolldaten (Zolltarifnummern, Exportlizenzen, Sanktionslistenprüfung)", "en": "Customs and export control data (tariff codes, export licences, sanctions screening)"},
+      "keywords": {"de": ["Zoll", "Zolltarifnummer", "Export", "Exportkontrolle", "Ausfuhrgenehmigung", "Sanktionsliste"], "en": ["customs", "tariff code", "HS code", "export control", "export licence", "sanctions screening"]} },
+    { "row": 101, "cluster": "strategy", "verdict": "not_permitted", "src": "860f14",
+      "name": {"de": "Ausschreibungen und Preisanfragen von Kunden (RFQs) sowie Joint Business Plans (JBP)", "en": "Customer tenders and requests for quotation (RFQs), and joint business plans (JBP)"},
+      "keywords": {"de": ["Ausschreibung", "Tender", "RFQ", "Angebotsanfrage", "Joint Business Plan", "JBP"], "en": ["tender", "RFQ", "request for quotation", "bid", "joint business plan", "JBP"]} },
+    { "row": 102, "cluster": "strategy", "verdict": "not_permitted", "src": "5591c7",
+      "name": {"de": "Pläne zu Restrukturierung, Personalstärke und Organisationsänderungen", "en": "Restructuring, headcount and organisational change plans"},
+      "keywords": {"de": ["Restrukturierung", "Umstrukturierung", "Headcount", "Stellenabbau", "Reorganisation", "Personalplanung"], "en": ["restructuring", "reorganisation", "headcount", "job cuts", "workforce planning", "org change"]} },
+    { "row": 103, "cluster": "strategy", "verdict": "not_permitted", "src": "238e5a",
+      "name": {"de": "Interne Präsentationen und Dokumente mit Vertraulichkeitskennzeichnung (Confidential oder Internal)", "en": "Internal presentations and documents with a classification label (Confidential or Internal)"},
+      "keywords": {"de": ["Confidential", "Internal", "vertraulich", "Kennzeichnung", "Präsentation", "Klassifizierung"], "en": ["confidential", "internal", "classification label", "presentation", "marking", "classified"]} },
+    { "row": 104, "cluster": "security", "verdict": "not_permitted", "src": "ac491b",
+      "name": {"de": "Interne IT-Architektur, Netzwerkpläne und Screenshots interner Systeme", "en": "Internal IT architecture, network diagrams and screenshots of internal systems"},
+      "keywords": {"de": ["IT-Architektur", "Netzwerkplan", "Netzwerkdiagramm", "Screenshot", "Systemlandschaft", "Infrastruktur"], "en": ["IT architecture", "network diagram", "screenshot", "system landscape", "infrastructure", "topology"]} },
+    { "row": 105, "cluster": "security", "verdict": "not_permitted", "src": "984e50",
+      "name": {"de": "Sicherheitsvorfälle, Datenpannen und Berichte über Schwachstellen", "en": "Security incidents, data breaches and vulnerability reports"},
+      "keywords": {"de": ["Sicherheitsvorfall", "Datenpanne", "Schwachstelle", "Incident", "Hackerangriff", "Datenleck"], "en": ["security incident", "data breach", "vulnerability", "incident", "cyber attack", "data leak"]} },
+    { "row": 106, "cluster": "compliance", "verdict": "not_permitted", "src": "734e10",
+      "name": {"de": "Hinweisgebermeldungen und interne Untersuchungen", "en": "Whistleblower reports and internal investigations"},
+      "keywords": {"de": ["Hinweisgeber", "Whistleblowing", "Meldung", "Untersuchung", "Compliance", "Hinweisgebersystem"], "en": ["whistleblower", "whistleblowing", "report", "internal investigation", "compliance", "speak-up"]} },
+    { "row": 107, "cluster": "marketing", "verdict": "not_permitted", "src": "ff7aff",
+      "name": {"de": "Unveröffentlichte Kampagnenmotive, Werbetexte und Claims", "en": "Unpublished campaign creatives, ad copy and claims"},
+      "keywords": {"de": ["Kampagne", "Motiv", "Werbetext", "Claim", "Kreation", "Entwurf", "Key Visual"], "en": ["campaign", "creative", "ad copy", "claim", "key visual", "draft", "artwork"]} },
+    { "row": 108, "cluster": "public", "verdict": "permitted", "src": "933de3",
+      "name": {"de": "Öffentlich zugängliche Informationen (veröffentlichte Pressemitteilungen, Geschäftsberichte, öffentliche Websites und Produktseiten)", "en": "Publicly available information (published press releases, annual reports, public websites and product pages)"},
+      "keywords": {"de": ["öffentlich", "Pressemitteilung", "Geschäftsbericht", "Website", "Produktseite", "veröffentlicht"], "en": ["public", "press release", "annual report", "website", "product page", "published"]} },
+    { "row": 109, "cluster": "public", "verdict": "permitted", "src": "9737e6",
+      "name": {"de": "Allgemeine Vorlagen, Prozessbeschreibungen und Prompts ohne Unternehmensbezug", "en": "Generic templates, process descriptions and prompts without company-specific data"},
+      "keywords": {"de": ["Vorlage", "Template", "Prompt", "Muster", "Prozessbeschreibung", "allgemein"], "en": ["template", "prompt", "sample", "generic", "process description", "boilerplate"]} },
+    { "row": 110, "cluster": "public", "verdict": "permitted", "src": "12e004",
+      "name": {"de": "Synthetische oder Dummy-Daten (fiktive Kunden, Testdaten)", "en": "Synthetic or dummy data (fictitious customers, test data)"},
+      "keywords": {"de": ["Dummy", "Testdaten", "fiktiv", "synthetisch", "Beispieldaten", "Musterdaten"], "en": ["dummy data", "test data", "fictitious", "synthetic", "sample data", "mock data"]} },
+    { "row": 20, "cluster": "hq_critical", "verdict": "not_permitted", "src": "220a4f",
+      "name": {"de": "Verträge mit Kunden und Dienstleistern (z. B. Logistik, IT, Mediaagentur) samt Konditionen und Preisen sowie Informationen, die unter einer Geheimhaltungsvereinbarung (NDA) erhalten wurden", "en": "Contracts with customers and service providers (e.g. logistics, IT, media agency), including conditions and prices, and information received under a non-disclosure agreement (NDA)"},
+      "keywords": {"de": ["Vertrag", "NDA", "Geheimhaltungsvereinbarung", "Dienstleistervertrag", "Rahmenvertrag", "Logistikvertrag", "Agenturvertrag"], "en": ["contract", "agreement", "NDA", "service agreement", "framework agreement", "logistics contract", "agency contract"]} },
+    { "row": 83, "cluster": "compliance", "verdict": "not_permitted", "src": "35ffd2",
+      "name": {"de": "Rechtlich geschützte Dokumente", "en": "Legally protected documents"},
+      "keywords": {"de": ["geschützt", "Rechtsdokument", "vertrauliches Dokument", "Anwaltsschreiben", "Rechtsgutachten", "Privileg"], "en": ["protected", "legal document", "privileged", "legal opinion", "lawyer letter", "confidential document"]} },
+    { "row": 84, "cluster": "compliance", "verdict": "not_permitted", "src": "d29ca5",
+      "name": {"de": "Vertrauliche Informationen über Geschäftspartner und Wettbewerber – auch solche, die über Händler kommen", "en": "Confidential information on business partners and competitors, including information received via retailers"},
+      "keywords": {"de": ["Wettbewerber", "Konkurrenz", "Wettbewerbsinformation", "Partnerinformation", "Händlerinfo", "Competitor"], "en": ["competitor", "competition", "competitor information", "partner information", "retailer information", "competitive intelligence"]} },
+    { "row": 85, "cluster": "compliance", "verdict": "not_permitted", "src": "16582d",
+      "name": {"de": "Daten, deren Nutzung durch Datenschutz-, Compliance- oder Vertraulichkeitsvorschriften eingeschränkt ist", "en": "Data whose use is restricted by data protection, compliance or confidentiality rules"},
+      "keywords": {"de": ["Datenschutz", "DSGVO", "Compliance", "Vertraulichkeit", "Nutzungsbeschränkung", "Geheimhaltung"], "en": ["data protection", "GDPR", "compliance", "confidentiality", "restricted use", "secrecy"]} },
+    { "row": 21, "cluster": "hq_critical", "verdict": "not_permitted", "src": "e519c9",
+      "name": {"de": "Lieferantenstammdaten, Einkaufspreise und Fracht- bzw. Speditionsraten – auch Einkaufsvertragsdaten (Artikel, Stückpreise) und technische Unterlagen von Lieferanten oder Subunternehmern (Zeichnungen, Konstruktionsunterlagen, Fertigungshandbücher, Prozessbedingungen)", "en": "Supplier master data, purchase prices and freight or forwarder rates, including purchasing-contract details (items, unit prices) and technical material from suppliers or subcontractors (drawings, design documents, manufacturing manuals, process conditions)"},
+      "keywords": {"de": ["Lieferant", "Lieferantenstamm", "Einkaufspreis", "Frachtrate", "Spedition", "Stückpreis", "Zeichnung", "Subunternehmer"], "en": ["supplier", "vendor", "purchase price", "freight rate", "forwarder", "unit price", "drawings", "subcontractor"]} },
+    { "row": 22, "cluster": "hq_critical", "verdict": "not_permitted", "src": "a01fb4",
+      "name": {"de": "Rechtsstreitigkeiten, Streitfälle, Abmahnungen und behördliche Ermittlungen (z. B. Bundeskartellamt) samt aller Unterlagen dazu", "en": "Litigation, disputes, formal warning letters (Abmahnungen) and investigations by authorities (e.g. the Federal Cartel Office), including all related material"},
+      "keywords": {"de": ["Klage", "Rechtsstreit", "Gerichtsverfahren", "Abmahnung", "Ermittlung", "Bundeskartellamt", "Behörde", "Streitfall"], "en": ["lawsuit", "court case", "warning letter", "Abmahnung", "investigation", "cartel office", "authority", "dispute"]} },
+    { "row": 23, "cluster": "hq_critical", "verdict": "not_permitted", "src": "f8a8cb",
+      "name": {"de": "Service-Informationen: nicht öffentliche Erklärunterlagen für externe Organisationen", "en": "Service-related information: non-public explanatory material for external organisations"},
+      "keywords": {"de": ["Service", "Serviceunterlagen", "Erklärmaterial", "Servicehandbuch", "Schulungsunterlagen", "externe Partner"], "en": ["service", "service material", "explanatory material", "service manual", "training material", "external partners"]} }
+  ]
+}
+</script>
+<!-- ===== END GUIDE DATA ===== -->
+
+<script>
+(() => {
+  const DATA = JSON.parse(document.getElementById("guide-data").textContent);
+  const LANGS = ["de", "en"];
+  const STORE = "seg-ai-data-guide.lang";
+  const THEME = "seg-ai-data-guide.theme";  // read by the script in <head>
+  const svg = (paths, cls = "", width = 2) => `<svg${cls ? ` class="${cls}"` : ""} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${width}" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">${paths}</svg>`;
+  const TICK = '<path d="M5 12.5l4.5 4.5L19 7.5"/>';
+  const CROSS = '<path d="M7 7l10 10M17 7L7 17"/>';
+  const CHECKED = '<circle cx="12" cy="12" r="9"/><path d="M8.5 12.5l2.5 2.5 4.5-5"/>';
+  const LOCK = '<rect x="5" y="10" width="14" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/>';
+  // The glyph in the result's coloured ring.
+  const GLYPH = {
+    permitted: TICK, permitted_with_conditions: TICK, not_permitted: CROSS,
+    internal_ai_only: '<path d="M4 20h16"/><path d="M6 20V9l6-4 6 4v11"/><path d="M10 20v-5h4v5"/>',
+    clarify_first: '<path d="M9 9a3 3 0 1 1 4.2 2.75c-.75.35-1.2 1-1.2 1.8v.45"/><path d="M12 18h.01"/>',
+  };
+  // One icon per data cluster key on the question 1 tiles.
+  const CLUSTER_ICON = {
+    personal: '<circle cx="12" cy="8" r="3.5"/><path d="M5 20c1.2-3.5 4-5 7-5s5.8 1.5 7 5"/>',
+    product: '<rect x="6" y="3" width="12" height="18" rx="2.5"/><path d="M10.5 18h3"/>',
+    market_sales: '<path d="M4 19V10M10 19V5M16 19v-7M21 19H3"/>',
+    price: '<path d="M20 12l-8 8-8-8V4h8z"/><circle cx="8.5" cy="8.5" r="1.3"/>',
+    marketing: '<path d="M4 11v2a2 2 0 0 0 2 2h1l4 4V5L7 9H6a2 2 0 0 0-2 2zM16 8a5 5 0 0 1 0 8"/>',
+    operations: '<path d="M3 7l9-4 9 4-9 4z"/><path d="M3 12l9 4 9-4M3 17l9 4 9-4"/>',
+    security: LOCK,
+    strategy: '<circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r="1"/>',
+    finance: '<circle cx="12" cy="12" r="8.5"/><path d="M12 3.5V12h8.5"/>',
+    customer_master: '<path d="M4 9.5V20h16V9.5"/><path d="M3 9.5L4.6 4h14.8L21 9.5z"/><path d="M10 20v-5h4v5"/>',
+    compliance: '<path d="M12 4v16M8 20h8M5 7h14"/><path d="M5 7l-2.5 6a2.5 2.5 0 0 0 5 0zM19 7l-2.5 6a2.5 2.5 0 0 0 5 0z"/>',
+    hq_basic: '<rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 8h6M9 12h6M9 16h3.5"/>',
+    hq_critical: '<path d="M12 3.5L2.8 19.5h18.4z"/><path d="M12 10v4.5M12 17h.01"/>',
+    public: '<circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5c2.4 2.3 3.6 5.2 3.6 8.5s-1.2 6.2-3.6 8.5c-2.4-2.3-3.6-5.2-3.6-8.5s1.2-6.2 3.6-8.5z"/>',
+  };
+  const verdicts = Object.fromEntries(DATA.verdicts.map(v => [v.key, v]));
+  const $ = id => document.getElementById(id);
+  const esc = s => String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+  // Browser storage can be blocked (private windows, strict policies); the guide must work without it.
+  const load = () => { try { const l = localStorage.getItem(STORE); return LANGS.includes(l) ? l : "de"; } catch (e) { return "de"; } };
+  const save = l => { try { localStorage.setItem(STORE, l); } catch (e) {} };
+  let lang = load();
+
+  const t = key => DATA.ui[lang][key];
+  // A text with {placeholders} filled in; the values are HTML, the text itself is escaped.
+  const fill = (key, values) => Object.entries(values).reduce((s, [k, v]) => s.replace(`{${k}}`, () => v), esc(t(key)));
+  // A verdict tag: a coloured dot and the verdict's short word.
+  const tag = key => `<span class="tag v-${key}">${esc(verdicts[key].short[lang])}</span>`;
+  const golden = () => `<p class="quote"><strong>${esc(t("goldenRuleLabel"))}:</strong> ${esc(t("goldenRule"))}</p>`;
+
+  // A configured link, opening in a new tab so the check keeps its answers; text defaults to the link's own label.
+  function link(key, text = DATA.links[key].label[lang]) {
+    const l = DATA.links[key], label = esc(text);
+    return l.url === "PENDING" ? `<span class="pending">${label} (${esc(t("linkPending"))})</span>` : `<a href="${esc(l.url)}" target="_blank" rel="noopener">${label}</a>`;
+  }
+  // A condition as HTML; "only anonymised" conditions name the Data Preparation Guide as {link}.
+  const condition = dp => esc(dp.condition[lang]).replace("{link}", () => link("prepGuide"));
+
+  // ===== Data check. The answers live only in this page's memory: never stored, never sent. =====
+  const UNLISTED = "unlisted", COND = "permitted_with_conditions";
+  const usedClusters = DATA.clusters.filter(c => DATA.dataPoints.some(dp => dp.cluster === c.key));
+  const point = row => DATA.dataPoints.find(dp => dp.row === row);
+  const strictFirst = (a, b) => verdicts[a.verdict].rank - verdicts[b.verdict].rank || a.row - b.row;
+  const blank = () => ({ clusters: [], points: [], conditions: {} });
+  let answers = blank(), step = "start", history = [];
+  let pq = "";  // the search text on question 2, cleared whenever the step changes
+
+  // The outcome for a set of answers, strictest first, and the data points that decide it.
+  function decide(a) {
+    const points = a.points.map(point).filter(dp => dp && a.clusters.includes(dp.cluster)).sort(strictFirst);
+    const unlisted = a.points.includes(UNLISTED);
+    const asked = points.length > 0 && points[0].verdict === COND;  // a stricter data point decides without the conditions
+    const answer = dp => asked ? a.conditions[dp.row] : undefined;
+    const no = points.filter(dp => dp.verdict === "not_permitted" || answer(dp) === "no");
+    const open = points.filter(dp => dp.verdict === COND && asked && answer(dp) !== "yes");
+    const [key, deciding] = no.length ? ["not_permitted", no]
+      : unlisted || open.length || !points.length ? ["clarify_first", open]
+      : points[0].verdict === "internal_ai_only" ? ["internal_ai_only", points.filter(dp => dp.verdict === "internal_ai_only")]
+      : asked ? [COND, points.filter(dp => dp.verdict === COND)]
+      : ["permitted", points];
+    return { key, deciding, points, unlisted, asked };
+  }
+  const next = (s, a) => s === "start" ? "clusters"
+    : s === "clusters" ? "points"
+    : s === "points" && decide(a).asked ? "conditions" : "result";
+  const canContinue = (s, a) => s === "clusters" ? a.clusters.length > 0
+    : s === "points" ? decide(a).points.length > 0 || decide(a).unlisted
+    : s !== "conditions" || decide(a).points.every(dp => dp.verdict !== COND || a.conditions[dp.row]);
+
+  const QUESTION = { clusters: 1, points: 2, conditions: 3 };
+  const stepHeading = text => `<h1 id="check-step" tabindex="-1">${esc(text)}</h1>`;
+  const progress = s => `<div class="progress" aria-hidden="true">${[1, 2, 3].map(i => `<i${i <= QUESTION[s] ? ' class="on"' : ""}></i>`).join("")}</div>
+    <p class="kicker">${fill("questionOf", { n: QUESTION[s], total: 3 })}</p>`;
+  const actions = (...buttons) => `<div class="actions">${buttons.map(([go, key]) =>
+    `<button type="button" class="btn${go === "back" ? " ghost" : ""}" data-go="${go}">${esc(t(key))}</button>`).join("")}</div>`;
+  const tile = (value, checked, name, hint, icon) => `<label class="tile">
+    <input type="checkbox" name="cluster" value="${value}"${checked ? " checked" : ""}>${icon ? svg(icon, "ic", 1.8) : ""}
+    <b>${esc(name)}</b><small>${esc(hint)}</small><span class="tick" aria-hidden="true">${svg(TICK, "", 3.2)}</span></label>`;
+  const row = (value, checked, label) => `<label class="row"${value === UNLISTED ? "" : ` data-row="${value}"`}>
+    <input class="cb" type="checkbox" name="point" value="${value}"${checked ? " checked" : ""}><span class="t">${label}</span></label>`;
+  const said = (a, dp) => esc(t(a.conditions[dp.row] || "unsure"));
+  const names = items => new Intl.ListFormat(lang, { type: "conjunction" }).format(items);
+
+  function checkView(a) {
+    if (step === "start") return `<div class="screen">${stepHeading(t("startQuestion"))}<p class="lead">${esc(t("checkIntro"))}</p>
+      <button type="button" class="btn" data-go="next">${esc(t("startCheck"))}</button>${golden()}
+      <p class="note">${svg(LOCK, "", 1.8)}${esc(t("privacyNote"))}</p></div>`;
+    const nav = actions(["back", "back"], ["next", "continue"]);
+    if (step === "clusters") return `<div class="screen">${progress(step)}${stepHeading(t("clustersQuestion"))}
+      <fieldset><legend class="lead">${esc(t("tickAll"))}</legend><div class="tiles">${usedClusters.map(c =>
+        tile(c.key, a.clusters.includes(c.key), c.name[lang], c.hint[lang], CLUSTER_ICON[c.key] || CLUSTER_ICON.hq_basic)).join("")}</div></fieldset></div>` + nav;
+    if (step === "points") return `<div class="screen">${progress(step)}${stepHeading(t("pointsQuestion"))}
+      <div><label class="sr" for="pq">${esc(t("pointsSearchLabel"))}</label><input class="search" id="pq" type="search" autocomplete="off"
+        spellcheck="false" placeholder="${esc(t("pointsSearch"))}" value="${esc(pq)}"></div>
+      ${usedClusters.filter(c => a.clusters.includes(c.key)).map(c => `<fieldset class="group" data-cluster="${c.key}"><legend>${esc(c.name[lang])}</legend>${DATA.dataPoints
+        .filter(dp => dp.cluster === c.key).sort((x, y) => x.row - y.row)
+        .map(dp => row(dp.row, a.points.includes(dp.row), esc(dp.name[lang]))).join("")}</fieldset>`).join("")}
+      <p class="empty-note" id="pq-empty" hidden>${esc(t("pointsEmpty"))}</p>
+      <fieldset class="group"><legend>${esc(t("other"))}</legend>${row(UNLISTED, a.points.includes(UNLISTED), esc(t("unlisted")))}</fieldset></div>` + nav;
+    const d = decide(a), conds = d.points.filter(dp => dp.verdict === COND);
+    if (step === "conditions") return `<div class="screen">${progress(step)}${stepHeading(t("conditionsQuestion"))}<p class="lead">${esc(t("conditionsIntro"))}</p>
+      ${conds.map(dp => `<fieldset class="ccard" aria-describedby="cond-${dp.row}"><legend>${esc(dp.name[lang])}</legend>
+        <p id="cond-${dp.row}">${condition(dp)}</p>
+        <div class="seg">${["yes", "no", "unsure"].map(v => `<label><input type="radio" name="c-${dp.row}" value="${v}"${a.conditions[dp.row] === v ? " checked" : ""}><span>${esc(t(v))}</span></label>`).join("")}</div>
+      </fieldset>`).join("")}</div>` + actions(["back", "back"], ["next", "showResult"]);
+
+    // The reason names the deciding data points in bold: contained ones, conditions answered No or Not sure, and the "not listed" choices.
+    const o = DATA.outcomes[d.key];
+    const kind = dp => !d.asked || dp.verdict !== COND || a.conditions[dp.row] === "yes" ? "whyContains"
+      : a.conditions[dp.row] === "no" ? "whyCannot" : "whyUnsure";
+    const why = { whyContains: [], whyCannot: [], whyUnsure: [], whyChose: [] };
+    d.deciding.forEach(dp => why[kind(dp)].push(`<b data-row="${dp.row}">${esc(dp.name[lang])}</b>`));
+    if (d.key === "clarify_first") why.whyChose = [d.unlisted && t("unlisted")].filter(Boolean).map(x => `<b>${esc(x)}</b>`);
+    const reason = Object.entries(why).filter(([, items]) => items.length).map(([key, items]) => fill(key, { items: names(items) })).join(" ");
+
+    const todo = {
+      not_permitted: () => `<h2>${esc(t("insteadHeading"))}</h2><ol class="steps"><li><span>${esc(o.whatToDo[lang])}</span></li>
+        <li><span>${esc(t("checkAgain"))}</span></li><li><span>${esc(t("askSupport"))} ${link("axSupport")}</span></li></ol>`,
+      clarify_first: () => `<h2>${esc(t("whatToDo"))}</h2><p>${esc(o.whatToDo[lang])} ${link("axSupport")}</p>`,
+      internal_ai_only: () => `<h2>${esc(t("whatToDo"))}</h2><p>${esc(o.whatToDo[lang])} ${link("internalAi")}</p>`,
+      [COND]: () => `<h2>${esc(t("mustHeading"))}</h2><ul class="must">${d.deciding.map(dp =>
+        `<li>${svg(CHECKED)}<span><strong>${esc(dp.name[lang])}:</strong> ${condition(dp)}</span></li>`).join("")}
+        <li>${svg(CHECKED)}<span>${esc(o.whatToDo[lang])}</span></li></ul>`,
+      permitted: () => `<h2>${esc(t("whatToDo"))}</h2><p>${esc(o.whatToDo[lang])}</p>${golden()}`,
+    }[d.key]();
+
+    const count = d.points.length === 1 ? esc(t("onePoint")) : fill("nPoints", { n: d.points.length });
+    const ticked = d.points.map(dp => `<li data-row="${dp.row}">${esc(dp.name[lang])}${tag(dp.verdict)}</li>`).join("")
+      + (d.unlisted ? `<li>${esc(t("unlisted"))}</li>` : "");
+    const clusters = a.clusters.map(k => DATA.clusters.find(c => c.key === k).name[lang]);
+    const rule = dp => dp.verdict === COND ? condition(dp)
+      : dp.verdict === "internal_ai_only" ? `${esc(t("internalOnly"))} ${link("internalAi")}` : esc(verdicts[dp.verdict].meaning[lang]);
+    const inputs = `<details class="more inputs"><summary><span>${esc(t("yourChoices"))} (${count})</span></summary><div>
+      ${ticked ? `<h3>${esc(t("tickedHeading"))}</h3><ul class="plain ticked">${ticked}</ul>` : ""}
+      <h3>${esc(t("answersHeading"))}</h3><dl class="answers"><dt>${esc(t("clustersQuestion"))}</dt><dd>${esc(clusters.join(", "))}</dd>
+        ${d.asked ? `<dt>${esc(t("conditionsQuestion"))}</dt>${conds.map(dp => `<dd>${esc(dp.name[lang])}: ${said(a, dp)}</dd>`).join("")}` : ""}</dl></div></details>`;
+    // The rules page on Confluence is the reference; it has no address per data point, so every name opens the page.
+    const rules = d.points.length ? `<details class="more rules-for"><summary><span>${esc(t("rulesForThese"))}</span></summary><div>
+      <ul class="plain">${d.points.map(dp => `<li>${link("aiPolicy", dp.name[lang])}
+        <span class="sub">${esc(verdicts[dp.verdict].label[lang])}: ${rule(dp)}</span></li>`).join("")}</ul></div></details>` : "";
+    // "Preparing your data" only when the result asks to anonymise: a condition to follow that links the guide.
+    const prepare = d.key === COND && d.deciding.some(dp => dp.condition[lang].includes("{link}"))
+      ? `<div class="todo prep"><h2>${esc(t("prepareHeading"))}</h2><p>${fill("prepare", { link: link("prepGuide") })}</p></div>` : "";
+    return `<div class="screen"><div class="hero v-${d.key}" data-outcome="${d.key}"><span class="ring">${svg(GLYPH[d.key], "", 2.6)}</span>
+        ${stepHeading(o.heading[lang])}<p>${esc(o.reason[lang])}</p></div>
+      ${reason ? `<p class="why deciding"><strong>${esc(t("decidingHeading"))}:</strong> ${reason}</p>` : ""}
+      <div class="todo">${todo}</div><div>${inputs}${rules}</div>${prepare}</div>` + actions(["back", "changeLast"], ["restart", "restart"]);
+  }
+
+  function renderCheck(focus) {
+    const el = $("check");
+    el.dataset.step = step;
+    el.setAttribute("aria-label", t("checkHeading"));
+    el.innerHTML = checkView(answers);
+    filterPoints();
+    updateContinue();
+    if (focus) {
+      el.firstElementChild.classList.add("enter");
+      scrollTo(0, 0);
+      $("check-step").focus({ preventScroll: true });
+    }
+  }
+  function updateContinue() {
+    const b = $("check").querySelector('[data-go="next"]');
+    if (!b || step === "start") return;
+    b.disabled = !canContinue(step, answers);
+    if (step !== "points") return;
+    const n = $("check").querySelectorAll('input[name="point"]:checked').length;
+    b.textContent = n ? `${t("continue")} · ${t("selected").replace("{n}", n)}` : t("continue");
+  }
+  // Question 2's search hides the rows that don't match; ticks on hidden rows stay.
+  function filterPoints() {
+    if (step !== "points") return;
+    const groups = [...$("check").querySelectorAll(".group[data-cluster]")];
+    for (const g of groups) {
+      const rows = [...g.querySelectorAll("[data-row]")];
+      rows.forEach(r => { r.hidden = !found(point(Number(r.dataset.row)), pq); });
+      g.hidden = rows.every(r => r.hidden);
+    }
+    $("pq-empty").hidden = groups.some(g => !g.hidden);
+  }
+
+  function render() {
+    document.documentElement.lang = lang;
+    document.title = t("title");
+    $("title").innerHTML = esc(t("title")).replace(/^(\S+)/, "<b>$1</b>");
+    const date = new Date(DATA.meta.asOf + "T00:00:00").toLocaleDateString(lang === "de" ? "de-DE" : "en-GB", { day: "numeric", month: "long", year: "numeric" });
+    $("meta").textContent = `${t("version")} ${DATA.meta.version} · ${t("asOf")} ${date}`;
+    $("lang-group").setAttribute("aria-label", t("language"));
+    $("theme").setAttribute("aria-label", t("darkMode"));
+    $("theme").title = t("darkMode");
+    $("theme").setAttribute("aria-checked", document.documentElement.dataset.theme === "dark");
+    document.querySelectorAll("[data-lang]").forEach(b => b.setAttribute("aria-pressed", b.dataset.lang === lang));
+    $("footer").innerHTML = esc(t("footer")).replace("{link}", link("aiPolicy"));
+    renderCheck(false);
+  }
+
+  // Search covers both languages whatever the display language, so "Seriennummer" and "serial" find the same data point.
+  const fold = s => String(s).toLowerCase().replace(/ä/g, "ae").replace(/ö/g, "oe").replace(/ü/g, "ue").replace(/ß/g, "ss")
+    .normalize("NFD").replace(/[̀-ͯ]/g, "");
+  const clusterOf = Object.fromEntries(DATA.clusters.map(c => [c.key, c]));
+  const haystack = Object.fromEntries(DATA.dataPoints.map(dp => [dp.row, fold(LANGS.flatMap(l => [
+    dp.name[l], dp.condition ? dp.condition[l].replace("{link}", DATA.links.prepGuide.label[l]) : "", clusterOf[dp.cluster].name[l], ...dp.keywords[l]]).join(" "))]));
+  const found = (dp, q) => fold(q).split(/\s+/).filter(Boolean).every(term => haystack[dp.row].includes(term));
+
+  const logoUrl = DATA.links.logo.url;
+  if (logoUrl) { const img = new Image(); img.alt = "SEG"; img.src = logoUrl; $("logo").append(img); }
+
+  $("lang-group").addEventListener("click", e => {
+    const b = e.target.closest("button[data-lang]");
+    if (!b) return;
+    lang = b.dataset.lang; save(lang); render();
+  });
+  // The light/dark switch; "theming" lets the colours fade for the length of the switch only (see the styles).
+  let fading;
+  $("theme").addEventListener("click", () => {
+    const root = document.documentElement;
+    root.classList.add("theming");
+    root.dataset.theme = root.dataset.theme === "dark" ? "light" : "dark";
+    try { localStorage.setItem(THEME, root.dataset.theme); } catch (e) {}
+    $("theme").setAttribute("aria-checked", root.dataset.theme === "dark");
+    clearTimeout(fading);
+    fading = setTimeout(() => root.classList.remove("theming"), 400);
+  });
+  // The title in the header goes back to the start screen and forgets every answer, without reloading the page.
+  $("home").addEventListener("click", e => {
+    e.preventDefault();
+    answers = blank(); history = []; step = "start"; pq = "";
+    renderCheck(true);
+  });
+  $("check").addEventListener("input", e => { if (e.target.id === "pq") { pq = e.target.value; filterPoints(); } });
+  $("check").addEventListener("change", e => {
+    const el = e.target, ticked = name => [...$("check").querySelectorAll(`input[name="${name}"]:checked`)].map(x => x.value);
+    if (el.name === "cluster") answers.clusters = ticked("cluster");
+    else if (el.name === "point") answers.points = ticked("point").map(v => v === UNLISTED ? v : Number(v));
+    else if (el.name.startsWith("c-")) answers.conditions[el.name.slice(2)] = el.value;
+    updateContinue();
+  });
+  $("check").addEventListener("click", e => {
+    const b = e.target.closest("[data-go]");
+    if (!b) return;
+    const go = b.dataset.go;
+    pq = "";
+    if (go === "next") { history.push(step); step = next(step, answers); }
+    else if (go === "back") step = history.pop() || "start";
+    else { answers = blank(); history = ["start"]; step = "clusters"; }
+    renderCheck(true);
+  });
+  // Print shows the check as it stands, with its "more" rows open (see the print styles).
+  let opened = [];
+  window.addEventListener("beforeprint", () => { opened = [...document.querySelectorAll("#check details:not([open])")]; opened.forEach(d => { d.open = true; }); });
+  window.addEventListener("afterprint", () => { opened.forEach(d => { d.open = false; }); opened = []; });
+  render();
+})();
+</script>
+</body>
+</html>
