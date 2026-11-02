@@ -40,14 +40,15 @@ Usage:
                                                              samples already drawn
     Add --template <file> to copy another master (Process 1) or to fill another workbook
     instead of the newest in 'Excel results' (--evidences-only), e.g. a test copy.
-Sales colleagues start it by double-click: 'Start here\\1 - Run new quarter', '2 - Redo pictures
+Sales colleagues start it by double-click: 'Start here\\1 - Run Control', '2 - Redo pictures
 only' (= --evidences-only, backs the file up to _Backup first), see the guide. The end is shown
 in a message window.
 
-Folders - found from where this file lies, so the share may have any drive letter (or none):
+Folders - found from where this file lies, so the share may have any drive letter (or none).
+This file lies in 'Tool files - do not change\\Program files - do not change':
     ..\\ICFR Control Backup and config\\  master template, _Backup, _Rohdaten, _Evidences
-    ..\\Excel results\\                   one new Excel file per run
-    ..\\Logs\\                            population_evidence_tool.log
+    ..\\Logs\\<Windows user>\\            one log per run, its result in the name, a summary on top
+    ..\\..\\Excel results\\                one new Excel file per run (next to 'Start here')
 
 Needs: pip install pywin32 keyring pymupdf playwright
 """
@@ -87,13 +88,14 @@ LOGGER = logging.getLogger("population_evidence_tool")
 # ---------------------------------------------------------------------------
 # CONFIGURATION
 # ---------------------------------------------------------------------------
-VERSION = "2026-10-27d"  # printed at the start, so the log shows which file ran
+VERSION = "2026-11-02"  # printed at the start, so the log shows which file ran
 # No drive letter: the share is K: on one PC and something else on another (2026-10-26), so every
-# folder is found from the tool's own folder - this file lies in 'Program files - do not change'
-ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DATA_DIR = os.path.join(ROOT_DIR, "ICFR Control Backup and config")  # master template + the folders below
-RESULTS_DIR = os.path.join(ROOT_DIR, "Excel results")  # one new Excel file per run
-LOG_FILE = os.path.join(ROOT_DIR, "Logs", "population_evidence_tool.log")
+# folder is found from the tool's own folder. Since 2026-10-28 the tool's three folders lie in
+# 'Tool files - do not change', next to 'Start here' and 'Excel results'
+TOOL_FILES_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # 'Tool files - do not change'
+DATA_DIR = os.path.join(TOOL_FILES_DIR, "ICFR Control Backup and config")  # master template + the folders below
+RESULTS_DIR = os.path.join(os.path.dirname(TOOL_FILES_DIR), "Excel results")  # one new Excel file per run
+LOG_DIR = os.path.join(TOOL_FILES_DIR, "Logs")  # one folder per Windows user, one file per run (RunLog)
 TEMPLATE_PATTERN = "GA-02-006_SEG.xls*"  # extension doesn't matter (.xlsx / .xlsm / .xlsb)
 RESULT_PATTERN = "GA-02-006_SEG*.xls*"  # also when renamed, as long as the name starts like this
 BACKUP_DIR_NAME = "_Backup"
@@ -573,6 +575,7 @@ def capture_sample(session, s, stem):
     """Document, workflow and invoice picture of one sample, in that order.
     A picture that fails is logged and left out - its slot in the sheet
     stays empty."""
+    LOGGER.info(f"--- Sample {s.number}, document {s.doc_no} ---")
     files = {}
     for kind, capture in (("document", _capture_document), ("workflow", _capture_workflow),
                           ("invoice", _capture_invoice)):
@@ -1049,7 +1052,7 @@ def latest_result():
     matches = glob.glob(os.path.join(glob.escape(RESULTS_DIR), RESULT_PATTERN))  # Excel's ~$ lock file doesn't match
     if not matches:
         raise RuntimeError(f"There is no Excel file in\n{RESULTS_DIR}\nyet. Please double-click "
-                           f"'1 - Run new quarter' first.")
+                           f"'1 - Run Control' first.")
     return max(matches, key=lambda p: os.stat(p).st_birthtime)
 
 
@@ -1395,7 +1398,7 @@ def run_evidences(session, path):
         samples = _selected_rows(pop)
         if not samples:
             raise RuntimeError(f"No row in '{SHEET_NAME}' is marked '{SELECTED_VALUE}' - draw the samples first "
-                               f"('1 - Run new quarter').")
+                               f"('1 - Run Control').")
         os.makedirs(run_dir)
         LOGGER.info(f"Taking SAP pictures for {len(samples)} sample(s) - please don't use SAP meanwhile ...")
         session.findById("wnd[0]").maximize()
@@ -1441,10 +1444,67 @@ def _template(args, default):
     return path
 
 
-def main():
-    os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s",
-                        handlers=[logging.StreamHandler(), logging.FileHandler(LOG_FILE, "a", "utf-8")])
+def _step(text):
+    """A heading in the log, so each part of the run is easy to find."""
+    LOGGER.info(f"========== {text} ==========")
+
+
+class RunLog(logging.Handler):
+    """The log of one run in Logs\\<Windows user>\\ - '<start>_<what>_running.log' while it runs.
+    finish() puts a summary on top (result, why it stopped, warnings, Excel file) and the result
+    into the name, so the folder shows at a glance which run had a problem (2026-11-02)."""
+
+    def __init__(self, what):
+        super().__init__(logging.WARNING)  # as a handler it collects the warnings for the summary
+        self.what, self.started, self.warnings, self.excel = what, dt.datetime.now(), [], None
+        folder = os.path.join(LOG_DIR, os.environ.get("USERNAME", "unknown"))
+        os.makedirs(folder, exist_ok=True)
+        self.path = os.path.join(folder, f"{self.started:%Y-%m-%d_%H-%M-%S}_{what.replace(' ', '-')}_running.log")
+        self.file = logging.FileHandler(self.path, "w", "utf-8")
+        logging.basicConfig(level=logging.INFO, format="%(asctime)s  %(levelname)-7s  %(message)s",
+                            datefmt="%H:%M:%S", handlers=[logging.StreamHandler(), self.file, self], force=True)
+
+    def emit(self, record):
+        self.warnings.append(record.getMessage())
+
+    def finish(self, exc=None):
+        """exc's technical details at the bottom, the summary on top. Returns the log's final path."""
+        root = logging.getLogger()
+        root.removeHandler(self)  # the technical details are no warning of the run
+        if exc:
+            LOGGER.error("Technical details for Utsav:", exc_info=exc)
+        root.removeHandler(self.file)
+        self.file.close()
+        result = "STOPPED" if exc else "WARNINGS" if self.warnings else "OK"
+        meaning = {"OK": "finished without problems", "WARNINGS": "finished - please check the warnings below",
+                   "STOPPED": "did NOT finish - see why below"}
+        took = int((dt.datetime.now() - self.started).total_seconds())
+        top = [f"RESULT:   {result} - {meaning[result]}",
+               f"Who:      {os.environ.get('USERNAME', '?')} on PC {os.environ.get('COMPUTERNAME', '?')}",
+               f"What:     {self.what}",
+               f"When:     {self.started:%d.%m.%Y %H:%M:%S}, took {took // 60} min {took % 60} s",
+               f"Version:  {VERSION}", ""]
+        if exc:
+            top += ["WHY IT STOPPED", *("  " + line for line in str(exc).splitlines()), ""]
+        if self.warnings:
+            top += [f"WARNINGS ({len(self.warnings)})", *("  - " + w.replace("\n", "\n    ") for w in self.warnings), ""]
+        if self.excel:
+            top += ["EXCEL FILE", "  " + self.excel, ""]
+        top += ["=" * 80, "STEP BY STEP", "=" * 80, ""]
+        final = self.path.replace("_running.log", f"_{result}.log")
+        try:
+            with open(self.path, encoding="utf-8") as f:
+                body = f.read()
+            with open(final, "w", encoding="utf-8") as f:
+                f.write("\n".join(top) + body)
+            os.remove(self.path)
+        except OSError as e:  # the log stays as it is, only without the summary
+            LOGGER.warning(f"Summary not written into the log ({e})")
+            return self.path
+        return final
+
+
+def _args():
     parser = argparse.ArgumentParser(description="Population + Evidences tool (FBL4N -> GA-02-006_SEG)")
     parser.add_argument("--from", dest="date_from", help="Posting date from (DD.MM.YYYY)")
     parser.add_argument("--to", dest="date_to", help="Posting date to (DD.MM.YYYY)")
@@ -1454,22 +1514,29 @@ def main():
                         help="Only Process 2 (Evidences) for the samples already drawn")
     parser.add_argument("--template", help="Copy this file instead of the master template, or with "
                         "--evidences-only fill it instead of the newest in 'Excel results' (e.g. a test copy)")
-    args = parser.parse_args()
-    # several colleagues share one log - the user name tells the runs apart
+    return parser.parse_args()
+
+
+def main(args, log):
     LOGGER.info(f"Population + Evidences tool, version {VERSION}, Windows user {os.environ.get('USERNAME', '?')}")
 
     if args.evidences_only:
-        template = _template(args, latest_result)
+        _step("1/3  Excel file")
+        template = log.excel = _template(args, latest_result)
+        LOGGER.info(f"Newest Excel file: {template}")
         backup_template(template)
+        _step("2/3  SAP logon")
         session, we_logged_in = sap_connector.get_sap_session()
         try:
             _use_sap_date_format(session)
+            _step("3/3  Evidence pictures")
             missing = run_evidences(session, template)
         finally:
             leave_sap(session, we_logged_in)
         LOGGER.info("Done.")
         return template, missing
 
+    _step("1/5  Period and master template")
     if args.date_from or args.date_to:  # a date not given: from/to of the last completed quarter
         default_from, default_to = _last_completed_quarter()
         date_from = _parse_user_date(args.date_from) if args.date_from else default_from
@@ -1480,10 +1547,13 @@ def main():
         raise RuntimeError("'from' is after 'to'.")
 
     master = None if args.columns else _template(args, find_template)  # check it before the SAP work, not afterwards
+    LOGGER.info(f"Period {date_from:%d.%m.%Y} - {date_to:%d.%m.%Y}, master template: {master}")
 
+    _step("2/5  SAP logon")
     session, we_logged_in = sap_connector.get_sap_session()
     try:
         _use_sap_date_format(session)
+        _step("3/5  SAP list FBL4N")
         # raw data and FBL4N pictures of this run: <stem>.csv, <stem>_<n>_<name>.png
         stem = os.path.join(DATA_DIR, RAW_EXPORT_DIR_NAME,
                             f"FBL4N_{date_from:%Y%m%d}-{date_to:%Y%m%d}_{dt.datetime.now():%Y-%m-%d_%H%M%S}")
@@ -1512,8 +1582,10 @@ def main():
                 f"rows (numbers/formulas in B and C). Please shorten the period."
             )
 
-        template = new_result_file(master, date_from, date_to)  # a new file - no backup needed
+        _step("4/5  Excel: population and samples")
+        template = log.excel = new_result_file(master, date_from, date_to)  # a new file - no backup needed
         missing = [f"Population ({name})" for name in process_template(template, rows, pictures)]
+        _step("5/5  Evidence pictures")
         try:
             missing += run_evidences(session, template)
         except Exception as e:
@@ -1526,13 +1598,16 @@ def main():
 
 
 if __name__ == "__main__":
+    args = _args()
+    log = RunLog("Redo pictures only" if args.evidences_only else "SAP columns" if args.columns else "Run Control")
     try:
-        result = main()
+        result = main(args, log)
     except Exception as exc:
-        LOGGER.exception(str(exc))  # with the traceback: 'WinError 5' alone didn't say which step (2026-10-27)
-        _tell("The tool stopped", f"{exc}\n\nAll details are in the log file:\n{LOG_FILE}\n\n"
+        path = log.finish(exc)
+        _tell("The tool stopped", f"{exc}\n\nAll details are in the log file:\n{path}\n\n"
               f"If it is not clear what to do, send this message and the log file to Utsav.", error=True)
         sys.exit(1)
+    log.finish()
     if result:  # not after --columns
         template, missing = result
         text = f"The file is ready:\n{template}"
